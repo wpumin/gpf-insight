@@ -1,0 +1,17 @@
+{
+  "name": "GPF Insight",
+  "short_name": "GPF Insight",
+  "description": "Daily NAV tracking for selected portfolios",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#020617",
+  "theme_color": "#059669",
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "192x192 512x512",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
