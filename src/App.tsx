@@ -445,26 +445,36 @@ export default function App() {
               
               <div className="flex-grow w-full -ml-4">
                 <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={chartData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
-                    <CartesianGrid strokeDasharray="4 4" vertical={false} stroke={theme === 'dark' ? '#1E293B' : '#E2E8F0'} />
+                  <LineChart data={chartData} margin={{ top: 20, right: 10, left: 0, bottom: 0 }}>
+                    <CartesianGrid 
+                      strokeDasharray="3 3"
+                      vertical={true}
+                      horizontal={true}
+                      stroke={theme === 'dark' ? '#334155' : '#E2E8F0'} 
+                      strokeOpacity={0.6}
+                    />
                     <XAxis 
                       dataKey="displayDate" 
-                      tick={{ fill: theme === 'dark' ? '#64748B' : '#64748B', fontSize: 10, fontWeight: 600 }} 
-                      tickMargin={12}
+                      tick={{ fill: theme === 'dark' ? '#64748B' : '#94A3B8', fontSize: 11, fontWeight: 500 }} 
+                      tickMargin={16}
                       axisLine={false}
                       tickLine={false}
-                      minTickGap={40}
+                      minTickGap={50}
                     />
                     <YAxis 
                       domain={['auto', 'auto']} 
-                      tick={{ fill: theme === 'dark' ? '#64748B' : '#64748B', fontSize: 10, fontWeight: 600 }}
-                      tickMargin={12}
+                      tick={{ fill: theme === 'dark' ? '#64748B' : '#94A3B8', fontSize: 11, fontWeight: 500, dx: -10 }}
+                      tickMargin={0}
                       axisLine={false}
                       tickLine={false}
                       tickFormatter={(val) => val.toFixed(2)}
-                      width={60}
+                      width={45}
+                      tickCount={6}
                     />
-                    <Tooltip content={<CustomTooltip />} cursor={{ stroke: theme === 'dark' ? '#334155' : '#CBD5E1', strokeWidth: 1, strokeDasharray: '4 4' }} />
+                    <Tooltip 
+                      content={<CustomTooltip />} 
+                      cursor={{ stroke: theme === 'dark' ? '#334155' : '#CBD5E1', strokeWidth: 2 }} 
+                    />
                     {selectedFunds.map((fund, idx) => (
                       <Line
                         key={fund}
@@ -474,7 +484,12 @@ export default function App() {
                         stroke={COLORS[allFunds.indexOf(fund) % COLORS.length]}
                         strokeWidth={3}
                         dot={false}
-                        activeDot={{ r: 5, strokeWidth: 0, fill: COLORS[allFunds.indexOf(fund) % COLORS.length] }}
+                        activeDot={{ 
+                          r: 6, 
+                          strokeWidth: 3, 
+                          stroke: theme === 'dark' ? '#0F172A' : '#FFFFFF',
+                          fill: COLORS[allFunds.indexOf(fund) % COLORS.length] 
+                        }}
                       />
                     ))}
                   </LineChart>
