@@ -216,20 +216,25 @@ const AiInsightCarousel = ({ data, allFunds }: { data: any[], allFunds: string[]
 export default function App() {
   const [data, setData] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const [theme, setTheme] = useState<'light' | 'dark'>('light');
+  const [theme, setTheme] = useState<'light' | 'dark'>(() => {
+    if (typeof localStorage !== 'undefined') {
+      const saved = localStorage.getItem('theme');
+      if (saved === 'light' || saved === 'dark') return saved;
+    }
+    // Default to light mode explicitly if not set, instead of strictly enforcing OS level
+    // to cater to users who prefer light web apps despite dark OS themes.
+    return 'light';
+  });
   const [timeFilter, setTimeFilter] = useState<'1Y' | '3Y' | 'MAX'>('MAX');
   
   const allFunds = Object.values(FUNDS_MAP);
   const [selectedFunds, setSelectedFunds] = useState<string[]>(['แผนลงทุนพื้นฐานทั่วไป', 'แผนเชิงรุก 65']);
 
   useEffect(() => {
-    if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
-      setTheme('dark');
-    }
-  }, []);
-
-  useEffect(() => {
     document.documentElement.classList.toggle('dark', theme === 'dark');
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem('theme', theme);
+    }
   }, [theme]);
 
   useEffect(() => {
@@ -441,10 +446,10 @@ export default function App() {
               <div className="flex-grow w-full -ml-4">
                 <ResponsiveContainer width="100%" height="100%">
                   <LineChart data={chartData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
-                    <CartesianGrid strokeDasharray="4 4" vertical={false} stroke={theme === 'dark' ? '#1E293B' : '#F1F5F9'} />
+                    <CartesianGrid strokeDasharray="4 4" vertical={false} stroke={theme === 'dark' ? '#1E293B' : '#E2E8F0'} />
                     <XAxis 
                       dataKey="displayDate" 
-                      tick={{ fill: theme === 'dark' ? '#64748B' : '#94A3B8', fontSize: 10, fontWeight: 600 }} 
+                      tick={{ fill: theme === 'dark' ? '#64748B' : '#64748B', fontSize: 10, fontWeight: 600 }} 
                       tickMargin={12}
                       axisLine={false}
                       tickLine={false}
@@ -452,14 +457,14 @@ export default function App() {
                     />
                     <YAxis 
                       domain={['auto', 'auto']} 
-                      tick={{ fill: theme === 'dark' ? '#64748B' : '#94A3B8', fontSize: 10, fontWeight: 600 }}
+                      tick={{ fill: theme === 'dark' ? '#64748B' : '#64748B', fontSize: 10, fontWeight: 600 }}
                       tickMargin={12}
                       axisLine={false}
                       tickLine={false}
                       tickFormatter={(val) => val.toFixed(2)}
                       width={60}
                     />
-                    <Tooltip content={<CustomTooltip />} cursor={{ stroke: theme === 'dark' ? '#334155' : '#E2E8F0', strokeWidth: 1, strokeDasharray: '4 4' }} />
+                    <Tooltip content={<CustomTooltip />} cursor={{ stroke: theme === 'dark' ? '#334155' : '#CBD5E1', strokeWidth: 1, strokeDasharray: '4 4' }} />
                     {selectedFunds.map((fund, idx) => (
                       <Line
                         key={fund}
@@ -512,37 +517,55 @@ export default function App() {
               </div>
               
               <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
-                {selectedFunds.slice(0, 4).map((fund, idx) => {
-                  const currentVal = latestData ? latestData[fund] : null;
-                  const prevVal = previousData ? previousData[fund] : null;
-                  const diff = currentVal && prevVal && prevVal !== 0 ? ((currentVal - prevVal) / prevVal) * 100 : 0;
-                  const isUp = diff >= 0;
+                <AnimatePresence mode="popLayout">
+                  {selectedFunds.slice(0, 4).map((fund, idx) => {
+                    const currentVal = latestData ? latestData[fund] : null;
+                    const prevVal = previousData ? previousData[fund] : null;
+                    const diff = currentVal && prevVal && prevVal !== 0 ? ((currentVal - prevVal) / prevVal) * 100 : 0;
+                    const isUp = diff >= 0;
 
-                  return (
-                    <div key={`card-${idx}`} className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-[20px] p-5 shadow-[0_4px_6px_-1px_rgba(0,0,0,0.05)] hover:border-blue-500 dark:hover:border-blue-500 transition-colors duration-200 flex flex-col justify-between">
-                      <span className="text-[13px] text-slate-500 dark:text-slate-400 font-medium leading-tight h-8 line-clamp-2">
-                        {fund}
-                      </span>
-                      <div className="mt-4">
-                        <div className="text-2xl font-bold text-slate-900 dark:text-white">
-                          {currentVal ? currentVal.toFixed(4) : '--'}
-                        </div>
-                        {currentVal && prevVal && (
-                          <div className={clsx("text-xs font-semibold mt-1 flex items-center gap-1", isUp ? "text-emerald-500" : "text-red-500")}>
-                            {isUp ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
-                            {isUp ? "+" : ""}{diff.toFixed(2)}%
+                    return (
+                      <motion.div 
+                        key={fund}
+                        layout
+                        initial={{ opacity: 0, scale: 0.8, y: 20 }}
+                        animate={{ opacity: 1, scale: 1, y: 0 }}
+                        exit={{ opacity: 0, scale: 0.8, y: -20 }}
+                        transition={{ duration: 0.3, type: "spring", bounce: 0.4 }}
+                        className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-[20px] p-5 shadow-[0_4px_6px_-1px_rgba(0,0,0,0.05)] hover:border-blue-500 dark:hover:border-blue-500 transition-colors duration-200 flex flex-col justify-between"
+                      >
+                        <span className="text-[13px] text-slate-500 dark:text-slate-400 font-medium leading-tight h-8 line-clamp-2">
+                          {fund}
+                        </span>
+                        <div className="mt-4">
+                          <div className="text-2xl font-bold text-slate-900 dark:text-white">
+                            {currentVal ? currentVal.toFixed(4) : '--'}
                           </div>
-                        )}
-                      </div>
-                    </div>
-                  );
-                })}
+                          {currentVal && prevVal && (
+                            <div className={clsx("text-xs font-semibold mt-1 flex items-center gap-1", isUp ? "text-emerald-500" : "text-red-500")}>
+                              {isUp ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
+                              {isUp ? "+" : ""}{diff.toFixed(2)}%
+                            </div>
+                          )}
+                        </div>
+                      </motion.div>
+                    );
+                  })}
 
-                {selectedFunds.length === 0 && (
-                  <div className="md:col-span-4 p-8 border-2 border-dashed border-slate-200 dark:border-slate-800 rounded-[20px] text-center">
-                    <p className="text-sm font-medium text-slate-500 dark:text-slate-400">ยังไม่ได้เลือกแผนการลงทุนสำหรับเปรียบเทียบในมุมมองการ์ด</p>
-                  </div>
-                )}
+                  {selectedFunds.length === 0 && (
+                    <motion.div 
+                      key="empty-state"
+                      layout
+                      initial={{ opacity: 0, scale: 0.95 }}
+                      animate={{ opacity: 1, scale: 1 }}
+                      exit={{ opacity: 0, scale: 0.95 }}
+                      transition={{ duration: 0.2 }}
+                      className="md:col-span-4 p-8 border-2 border-dashed border-slate-200 dark:border-slate-800 rounded-[20px] text-center"
+                    >
+                      <p className="text-sm font-medium text-slate-500 dark:text-slate-400">ยังไม่ได้เลือกแผนการลงทุนสำหรับเปรียบเทียบในมุมมองการ์ด</p>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
               </div>
             </div>
 
@@ -556,8 +579,9 @@ export default function App() {
                   const isSelected = selectedFunds.includes(fund);
                   const color = COLORS[allFunds.indexOf(fund) % COLORS.length];
                   return (
-                    <button
+                    <motion.button
                       key={fund}
+                      whileTap={{ scale: 0.95 }}
                       onClick={() => toggleFund(fund)}
                       className={clsx(
                         "flex items-center gap-2.5 p-3 text-left rounded-xl border transition-all duration-200 group h-full",
@@ -579,7 +603,7 @@ export default function App() {
                       )}>
                         {fund}
                       </span>
-                    </button>
+                    </motion.button>
                   );
                 })}
               </div>
