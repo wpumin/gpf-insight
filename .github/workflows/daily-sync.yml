@@ -1,0 +1,25 @@
+name: GPF Daily Sync
+
+on:
+  schedule:
+    # 05:00 UTC = 12:00 PM ICT/Bangkok (Thailand Time)
+    - cron: '0 5 * * *'
+  workflow_dispatch: # Allows you to manually click "Run workflow" in GitHub
+
+jobs:
+  sync-nav-data:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install Dependencies
+        run: npm install
+
+      - name: Run GPF Daily Sync Script
+        run: npx tsx scripts/sync.ts
