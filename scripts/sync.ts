@@ -1,0 +1,115 @@
+import axios from "axios";
+import { initializeApp } from 'firebase/app';
+import { getFirestore, doc, getDoc, setDoc } from 'firebase/firestore';
+import fs from 'fs';
+
+// Read configuration manually to avoid ES module assertion issues in different environments
+const configPath = new URL('../firebase-applet-config.json', import.meta.url);
+const firebaseConfig = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+
+const appFirebase = initializeApp(firebaseConfig);
+const db = getFirestore(appFirebase, firebaseConfig.firestoreDatabaseId);
+
+const FUNDS_MAP: Record<string, string> = {
+  UNIT_COST1: "แผนลงทุนพื้นฐานทั่วไป",
+  UNIT_COST2: "แผนเชิงรุก 35",
+  UNIT_COST3: "แผนตราสารหนี้",
+  UNIT_COST4: "แผนเงินฝากและตราสารหนี้ระยะสั้น",
+  UNIT_COST5: "แผนเชิงรุก 20* (เป็นส่วนหนึ่งของแผนสมดุลตามอายุ)",
+  UNIT_COST6: "แผนเชิงรุก 65",
+  UNIT_COST7: "แผนหุ้นไทย",
+  UNIT_COST8: "แผนกองทุนอสังหาริมทรัพย์ไทย",
+  UNIT_COST9: "แผนหุ้นต่างประเทศ",
+  UNIT_COST11: "แผนตราสารหนี้ต่างประเทศ",
+  UNIT_COST12: "แผนทองคำ",
+  UNIT_COST13: "แผนเชิงรุก 75* (เป็นส่วนหนึ่งของแผนสมดุลตามอายุ)",
+  UNIT_COST14: "แผนกองทุนรวมวายุภักษ์",
+  UNIT_COST15: "แผนเกษียณสบายใจ 2569",
+  UNIT_COST16: "แผนการลงทุนตามหลักชะรีอะฮ์"
+};
+
+async function fetchMonthData(monthStr: string, yearStr: string) {
+  try {
+    const res = await axios.get(`https://www.gpf.or.th/thai2019/About/memberfund-api.php?pageName=NAVBottom_${monthStr}_${yearStr}`, {
+        responseType: 'text'
+    });
+    const cleanData = res.data.replace(/^\uFEFF/, '').trim();
+    if(cleanData === '' || cleanData === 'null' || cleanData === '[]') return null;
+    return JSON.parse(cleanData);
+  } catch(e: any) {
+    if(e.response?.status !== 404) console.error(`Failed to fetch ${monthStr}_${yearStr}:`, e.message);
+    return null;
+  }
+}
+
+async function processDataAndSaveToFirestore(jsonArray: any[]) {
+    let updatedCount = 0;
+    for (const item of jsonArray) {
+        if (!item.LAUNCH_DATE) continue;
+        const [datePart] = item.LAUNCH_DATE.split(' ');
+        const [dd, mm, yyyy] = datePart.split('/');
+        const stdDate = `${yyyy}-${mm}-${dd}`;
+        
+        try {
+            const docRef = doc(db, 'nav_history', stdDate);
+            const docSnap = await getDoc(docRef);
+            
+            let record: any = { date: stdDate };
+            if (docSnap.exists()) {
+                record = docSnap.data();
+            }
+            
+            let hasChanges = false;
+            for (const [key, name] of Object.entries(FUNDS_MAP)) {
+                const nav = item[key];
+                if (nav !== null && nav !== undefined && nav !== '') {
+                   const parsed = parseFloat(nav);
+                   if (record[name] !== parsed && !isNaN(parsed)) {
+                     record[name] = parsed;
+                     hasChanges = true;
+                   }
+                }
+            }
+            
+            if (hasChanges || !docSnap.exists()) {
+                await setDoc(docRef, record, { merge: true });
+                updatedCount++;
+            }
+        } catch(e) {
+            console.error("Error saving to Firestore:", stdDate, e);
+        }
+    }
+    return updatedCount;
+}
+
+async function runDailySync() {
+    console.log("Starting GitHub Action Daily Sync...");
+    // Force UTC timezone logic to current local time just to be safe
+    const date = new Date();
+    let totalAdded = 0;
+    
+    // We fetch the current month AND the previous month, 
+    // to make sure we don't miss days right around the end/start of the month overlap.
+    for (let i = 0; i < 2; i++) {
+        const mStr = (date.getMonth() + 1).toString().padStart(2, '0');
+        const yStr = date.getFullYear().toString();
+        
+        console.log(`[Sync] Fetching data for ${mStr}/${yStr}...`);
+        const data = await fetchMonthData(mStr, yStr);
+        if (data && Array.isArray(data)) {
+            const count = await processDataAndSaveToFirestore(data);
+            console.log(`[Sync] Saved/Updated ${count} records for ${mStr}/${yStr}.`);
+            totalAdded += count;
+        } else {
+            console.log(`[Sync] No data found for ${mStr}/${yStr}.`);
+        }
+        
+        // Move to previous month
+        date.setMonth(date.getMonth() - 1);
+    }
+    
+    console.log(`✅ Daily sync complete. Total new/updated records: ${totalAdded}`);
+    process.exit(0);
+}
+
+runDailySync();

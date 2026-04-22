@@ -1,0 +1,15 @@
+import { initializeApp } from 'firebase/app';
+import { getFirestore } from 'firebase/firestore';
+
+export const firebaseConfig = {
+  projectId: "gen-lang-client-0309029978",
+  appId: "1:631083850892:web:1754607c1f7e1b61196fa9",
+  apiKey: "AIzaSyAhhOZJIgEiO-tnx8cfC1VoJSx3u7nfgcQ",
+  authDomain: "gen-lang-client-0309029978.firebaseapp.com",
+  storageBucket: "gen-lang-client-0309029978.firebasestorage.app",
+  messagingSenderId: "631083850892",
+};
+
+export const app = initializeApp(firebaseConfig);
+// Note: We MUST map to the correct enterprise database ID we provisioned.
+export const db = getFirestore(app, "ai-studio-b8dd6132-c066-4d98-850b-446562756b24");
