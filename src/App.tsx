@@ -278,6 +278,7 @@ export default function App() {
   }, [theme]);
 
   useEffect(() => {
+    const startTime = Date.now();
     const fetchFromFirebase = async () => {
       try {
         const { collection, getDocs, query, orderBy } = await import('firebase/firestore');
@@ -293,6 +294,19 @@ export default function App() {
       } catch(e) {
         console.error(e);
         setLoading(false);
+      } finally {
+        // Handle Splash Screen Removal
+        const elapsed = Date.now() - startTime;
+        const minSplashTime = 1200; // Force splash to show for at least 1.2s for native feel
+        const delay = Math.max(0, minSplashTime - elapsed);
+        
+        setTimeout(() => {
+          const splash = document.getElementById('pwa-splash');
+          if (splash) {
+            splash.classList.add('fade-out');
+            setTimeout(() => splash.remove(), 600); // Wait for CSS transition
+          }
+        }, delay);
       }
     };
     fetchFromFirebase();
