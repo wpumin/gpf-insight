@@ -443,9 +443,9 @@ export default function App() {
                 </div>
               </div>
               
-              <div className="flex-grow w-full -ml-4">
+              <div className="flex-grow w-full mt-4">
                 <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={chartData} margin={{ top: 20, right: 10, left: 0, bottom: 0 }}>
+                  <LineChart data={chartData} margin={{ top: 10, right: 5, left: 0, bottom: 0 }}>
                     <CartesianGrid 
                       strokeDasharray="3 3"
                       vertical={true}
@@ -456,15 +456,15 @@ export default function App() {
                     <XAxis 
                       dataKey="displayDate" 
                       tick={{ fill: theme === 'dark' ? '#64748B' : '#94A3B8', fontSize: 11, fontWeight: 500 }} 
-                      tickMargin={16}
+                      tickMargin={12}
                       axisLine={false}
                       tickLine={false}
                       minTickGap={50}
                     />
                     <YAxis 
                       domain={['auto', 'auto']} 
-                      tick={{ fill: theme === 'dark' ? '#64748B' : '#94A3B8', fontSize: 11, fontWeight: 500, dx: -10 }}
-                      tickMargin={0}
+                      tick={{ fill: theme === 'dark' ? '#64748B' : '#94A3B8', fontSize: 11, fontWeight: 500 }}
+                      tickMargin={8}
                       axisLine={false}
                       tickLine={false}
                       tickFormatter={(val) => val.toFixed(2)}
