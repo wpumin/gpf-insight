@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer
 } from 'recharts';
@@ -93,6 +93,31 @@ const FearAndGreedCard = () => {
 // --- AI Insights Carousel Component ---
 const AiInsightCarousel = ({ data, allFunds }: { data: any[], allFunds: string[] }) => {
   const [currentSlide, setCurrentSlide] = useState(0);
+  const touchStartX = useRef<number | null>(null);
+  const touchEndX = useRef<number | null>(null);
+
+  const handleTouchStart = (e: React.TouchEvent) => {
+    touchStartX.current = e.targetTouches[0].clientX;
+    touchEndX.current = null;
+  };
+
+  const handleTouchMove = (e: React.TouchEvent) => {
+    touchEndX.current = e.targetTouches[0].clientX;
+  };
+
+  const handleTouchEnd = () => {
+    if (!touchStartX.current || !touchEndX.current) return;
+    const distance = touchStartX.current - touchEndX.current;
+    
+    // swipe left (next)
+    if (distance > 50) {
+      setCurrentSlide((prev) => (prev + 1) % insights.length);
+    } 
+    // swipe right (prev)
+    else if (distance < -50) {
+      setCurrentSlide((prev) => (prev - 1 + insights.length) % insights.length);
+    }
+  };
 
   const insights = useMemo(() => {
     if (!data || data.length < 2) return [];
@@ -174,7 +199,13 @@ const AiInsightCarousel = ({ data, allFunds }: { data: any[], allFunds: string[]
         </span>
       </div>
       
-      <div className="relative flex-1 cursor-pointer w-full mb-6" onClick={() => setCurrentSlide((prev) => (prev + 1) % insights.length)}>
+      <div 
+        className="relative flex-1 cursor-pointer w-full mb-6" 
+        onClick={() => setCurrentSlide((prev) => (prev + 1) % insights.length)}
+        onTouchStart={handleTouchStart}
+        onTouchMove={handleTouchMove}
+        onTouchEnd={handleTouchEnd}
+      >
         <AnimatePresence mode="wait">
           <motion.div
             key={currentSlide}
