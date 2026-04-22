@@ -266,6 +266,15 @@ export default function App() {
     if (typeof localStorage !== 'undefined') {
       localStorage.setItem('theme', theme);
     }
+    
+    // Update PWA Status bar color to match the theme background
+    let metaThemeColor = document.querySelector('meta[name="theme-color"]');
+    if (!metaThemeColor) {
+      metaThemeColor = document.createElement('meta');
+      metaThemeColor.setAttribute('name', 'theme-color');
+      document.head.appendChild(metaThemeColor);
+    }
+    metaThemeColor.setAttribute('content', theme === 'dark' ? '#020617' : '#F8FAFC');
   }, [theme]);
 
   useEffect(() => {
