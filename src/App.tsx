@@ -11,6 +11,7 @@ import { Loader2, TrendingUp, TrendingDown, Sparkles, ArrowRight, Shield, Chevro
 import { motion, AnimatePresence } from 'motion/react';
 import clsx from 'clsx';
 import { format, parseISO, subYears } from 'date-fns';
+import { DynamicHoldSimulator } from './components/DynamicHoldSimulator';
 
 const FUNDS_MAP: Record<string, string> = {
   UNIT_COST1: "แผนลงทุนพื้นฐานทั่วไป",
@@ -123,7 +124,6 @@ const AiInsightCarousel = ({ data, allFunds }: { data: any[], allFunds: string[]
     if (!data || data.length < 2) return [];
 
     const latest = data[data.length - 1];
-    // Find a date roughly a month ago, or oldest if less
     const oldData = data.length > 21 ? data[data.length - 22] : data[0]; 
 
     const perfs = allFunds.map(fund => {
@@ -139,36 +139,49 @@ const AiInsightCarousel = ({ data, allFunds }: { data: any[], allFunds: string[]
 
     const best = perfs[0];
     const worst = perfs[perfs.length - 1];
-    const defensive = perfs.find(p => p.fund.includes('ตราสารหนี้') || p.fund.includes('เงินฝาก')) || perfs[perfs.length / 2 | 0];
+    const defensive = perfs.find(p => p.fund.includes('ตราสารหนี้') || p.fund.includes('ตลาดเงิน')) || perfs[perfs.length / 2 | 0];
+
+    // Global News & Macro Context mapping based on Real Data
+    const isBullMarket = best.diff > 2.0;
+    const isBearMarket = worst.diff < -2.0;
+    
+    let marketCommentary = '';
+    if (isBullMarket) {
+      marketCommentary = 'ได้ประโยชน์จากกระแสเงินทุนไหลเข้าสินทรัพย์เสี่ยง (Risk-on) ในตลาดโลก และแนวโน้มดอกเบี้ยขาลงของ FED';
+    } else if (isBearMarket) {
+      marketCommentary = 'ได้รับแรงกดดันจากความกังวลเศรษฐกิจโลกชะลอตัวและการปรับฐานของตลาดหุ้นภูมิภาค (Correction Phase)';
+    } else {
+      marketCommentary = 'มีโมเมนตัมที่ค่อยๆ ปรับตัวรับรู้ข่าวการดำเนินนโยบายการเงินและการเมืองทั่วโลก แบบ Sideways';
+    }
 
     return [
       {
         id: 1,
-        title: "Top Performer 🚀",
+        title: "Global Macro & Top Mover 🌍",
         icon: <TrendingUp className="w-5 h-5 text-emerald-500" />,
         text: (
           <span>
-            <strong className="text-emerald-500">{best.fund}</strong> เติบโตดีที่สุด <strong className="text-emerald-500">{(best.diff >= 0 ? '+' : '')}{best.diff.toFixed(2)}%</strong> ในรอบเดือนที่ผ่านมา โมเมนตัมช่วงนี้ร้อนแรงที่สุด
+            <strong className="text-emerald-500">{best.fund}</strong> เติบโตนำตลาด <strong className="text-emerald-500">{(best.diff >= 0 ? '+' : '')}{best.diff.toFixed(2)}%</strong> ในเดือนนี้ {marketCommentary}
           </span>
         )
       },
       {
         id: 2,
-        title: "Switching Idea 🔄",
+        title: "Risk Analysis & Portfolio Strategy ⚖️",
         icon: <ArrowRight className="w-5 h-5 text-amber-500" />,
         text: (
           <span>
-            ถ้าคุณถือ <strong className="text-slate-700 dark:text-slate-300">{worst.fund}</strong> ({(worst.diff >= 0 ? '+' : '')}{worst.diff.toFixed(2)}%) อาจพิจารณากระจายน้ำหนักบางส่วนไปแผนที่มีแนวโน้มเป็นบวก เช่น {best.fund}
+            กองทุนกลุ่มล้าหลังอย่าง <strong className="text-slate-700 dark:text-slate-300">{worst.fund}</strong> ({(worst.diff >= 0 ? '+' : '')}{worst.diff.toFixed(2)}%) เริ่มส่งสัญญาณพักตัว อาจใช้โอกาสนี้ <strong className="text-amber-500">Rebalance Portfolio</strong> ด้วยการเก็บสะสมกรณีเป็นนักลงทุนระยะยาว
           </span>
         )
       },
       {
         id: 3,
-        title: "Defensive Move 🛡️",
+        title: "Safe Haven Insight 🛡️",
         icon: <Shield className="w-5 h-5 text-blue-500" />,
         text: (
           <span>
-            ในสภาวะตลาดผันผวน <strong className="text-blue-500">{defensive.fund}</strong> ให้ผลตอบแทนค่อนข้างมั่นคงที่ <strong className="text-blue-500">{(defensive.diff >= 0 ? '+' : '')}{defensive.diff.toFixed(2)}%</strong> เหมาะสำหรับพักเงินเพื่อรอดูภาพรวม
+            เมื่อตลาดเผชิญความผันผวนจากข่าวภูมิรัฐศาสตร์ <strong className="text-blue-500">{defensive.fund}</strong> ทำหน้าที่เป็น Safe Haven ที่ดีด้วยอัตราเร่งคงที่ <strong className="text-blue-500">{(defensive.diff >= 0 ? '+' : '')}{defensive.diff.toFixed(2)}%</strong> ช่วยลด Volatility โดยรวมของพอร์ต
           </span>
         )
       }
@@ -278,8 +291,7 @@ export default function App() {
   }, [theme]);
 
   useEffect(() => {
-    const startTime = Date.now();
-    const fetchFromFirebase = async () => {
+    const fetchFromFirebase = async (isInitial = false) => {
       try {
         const { collection, getDocs, query, orderBy } = await import('firebase/firestore');
         const { db } = await import('./firebase');
@@ -289,27 +301,42 @@ export default function App() {
         querySnapshot.forEach((doc) => {
           fetchedData.push(doc.data());
         });
-        setData(fetchedData);
-        setLoading(false);
+        
+        // Update state only if data actually changed to prevent any unnecessary flickering
+        setData(prevData => {
+          const isDifferent = JSON.stringify(prevData) !== JSON.stringify(fetchedData);
+          return isDifferent ? fetchedData : prevData;
+        });
+        
+        if (isInitial) setLoading(false);
       } catch(e) {
         console.error(e);
-        setLoading(false);
-      } finally {
-        // Handle Splash Screen Removal
-        const elapsed = Date.now() - startTime;
-        const minSplashTime = 1200; // Force splash to show for at least 1.2s for native feel
-        const delay = Math.max(0, minSplashTime - elapsed);
-        
-        setTimeout(() => {
-          const splash = document.getElementById('pwa-splash');
-          if (splash) {
-            splash.classList.add('fade-out');
-            setTimeout(() => splash.remove(), 600); // Wait for CSS transition
-          }
-        }, delay);
+        if (isInitial) setLoading(false);
       }
     };
-    fetchFromFirebase();
+
+    const startTime = Date.now();
+    fetchFromFirebase(true).finally(() => {
+      // Handle Splash Screen Removal
+      const elapsed = Date.now() - startTime;
+      const minSplashTime = 1200; // Force splash to show for at least 1.2s for native feel
+      const delay = Math.max(0, minSplashTime - elapsed);
+      
+      setTimeout(() => {
+        const splash = document.getElementById('pwa-splash');
+        if (splash) {
+          splash.classList.add('fade-out');
+          setTimeout(() => splash.remove(), 600); // Wait for CSS transition
+        }
+      }, delay);
+    });
+
+    // Refresh data silently every 5 minutes
+    const intervalIdx = setInterval(() => {
+      fetchFromFirebase(false);
+    }, 5 * 60 * 1000);
+
+    return () => clearInterval(intervalIdx);
   }, []);
 
   const toggleFund = (fund: string) => {
@@ -469,7 +496,8 @@ export default function App() {
           </div>
         ) : (
           <>
-            <div className="lg:col-span-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-[20px] p-5 shadow-[0_4px_6px_-1px_rgba(0,0,0,0.05)] hover:border-emerald-500 dark:hover:border-emerald-500 transition-colors duration-200 flex flex-col min-h-[400px]">
+            {/* Chart */}
+            <div className="lg:col-span-3 order-1 lg:order-1 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-[20px] p-5 shadow-[0_4px_6px_-1px_rgba(0,0,0,0.05)] hover:border-emerald-500 dark:hover:border-emerald-500 transition-colors duration-200 flex flex-col min-h-[400px]">
               <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-4">
                 <div>
                   <h2 className="text-lg font-bold text-slate-800 dark:text-white">Performance History</h2>
@@ -552,7 +580,7 @@ export default function App() {
             </div>
 
             {/* Sidebar Data: AI Insights & System Status */}
-            <div className="lg:col-span-1 grid grid-cols-1 md:grid-cols-3 lg:grid-cols-1 gap-4">
+            <div className="lg:col-span-1 order-4 lg:order-2 grid grid-cols-1 md:grid-cols-3 lg:grid-cols-1 gap-4">
               <AiInsightCarousel data={formattedData} allFunds={allFunds} />
               
               <FearAndGreedCard />
@@ -572,8 +600,13 @@ export default function App() {
               </div>
             </div>
 
+            {/* AI Strategy Simulator */}
+            <div className="lg:col-span-4 order-5 lg:order-3">
+              <DynamicHoldSimulator data={formattedData} allFunds={allFunds} />
+            </div>
+
             {/* Comparison Cards Limit info and Cards */}
-            <div className="lg:col-span-4 mt-2">
+            <div className="lg:col-span-4 order-3 lg:order-3 mt-2">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-4 px-1 gap-2">
                 <h3 className="text-base font-bold text-slate-800 dark:text-slate-200 tracking-tight flex items-center gap-2">
                   เปรียบเทียบผลการดำเนินงาน 1 วันล่าสุด
@@ -629,7 +662,7 @@ export default function App() {
                       animate={{ opacity: 1, scale: 1 }}
                       exit={{ opacity: 0, scale: 0.95 }}
                       transition={{ duration: 0.2 }}
-                      className="md:col-span-4 p-8 border-2 border-dashed border-slate-200 dark:border-slate-800 rounded-[20px] text-center"
+                      className="col-span-1 sm:col-span-2 md:col-span-4 p-8 border-2 border-dashed border-slate-200 dark:border-slate-800 rounded-[20px] text-center"
                     >
                       <p className="text-sm font-medium text-slate-500 dark:text-slate-400">ยังไม่ได้เลือกแผนการลงทุนสำหรับเปรียบเทียบในมุมมองการ์ด</p>
                     </motion.div>
@@ -638,12 +671,19 @@ export default function App() {
               </div>
             </div>
 
-            <div className="lg:col-span-4 bg-white dark:bg-slate-900 rounded-[20px] shadow-[0_4px_6px_-1px_rgba(0,0,0,0.05)] border border-slate-200 dark:border-slate-800 p-5 sm:p-6 mt-2 hover:border-emerald-500 dark:hover:border-emerald-500 transition-colors duration-200">
-              <div className="flex justify-between items-center mb-5">
-                <h3 className="text-sm font-bold text-slate-800 dark:text-slate-200 uppercase tracking-wider">Configure Portfolios</h3>
-                <span className="text-xs font-medium text-slate-500 bg-slate-100 dark:bg-slate-800 px-2 py-1 rounded-md">{selectedFunds.length} selected</span>
+            <div className="lg:col-span-4 order-2 lg:order-4 bg-white dark:bg-slate-900 rounded-[20px] shadow-[0_4px_6px_-1px_rgba(0,0,0,0.05)] border border-slate-200 dark:border-slate-800 p-4 sm:p-5 mt-0 lg:mt-2 lg:hover:border-emerald-500 dark:lg:hover:border-emerald-500 transition-colors duration-200">
+              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4 gap-2">
+                <div className="flex items-center gap-2">
+                  <h3 className="text-sm font-bold text-slate-800 dark:text-slate-200 uppercase tracking-wider">Configure Portfolios</h3>
+                  <div className="hidden sm:flex bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 text-[10px] font-bold px-2 py-0.5 rounded-full items-center">
+                    <Activity className="w-3 h-3 mr-1" /> Tap to update chart
+                  </div>
+                </div>
+                <span className="text-xs font-medium text-slate-500 bg-slate-100 dark:bg-slate-800 px-3 py-1 rounded-full whitespace-nowrap border border-slate-200 dark:border-slate-700/50">{selectedFunds.length} selected</span>
               </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
+              
+              {/* Flex Column on Mobile, Grid on Desktop */}
+              <div className="flex flex-col sm:grid sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
                 {allFunds.map((fund) => {
                   const isSelected = selectedFunds.includes(fund);
                   const color = COLORS[allFunds.indexOf(fund) % COLORS.length];
@@ -653,7 +693,7 @@ export default function App() {
                       whileTap={{ scale: 0.95 }}
                       onClick={() => toggleFund(fund)}
                       className={clsx(
-                        "flex items-center gap-2.5 p-3 text-left rounded-xl border transition-all duration-200 group h-full",
+                        "flex w-full items-center gap-3 p-3 text-left rounded-xl border transition-all duration-200 group h-full",
                         isSelected 
                           ? "bg-slate-50 dark:bg-slate-800/50 border-emerald-500/30 dark:border-emerald-500/30 shadow-sm" 
                           : "bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 hover:border-emerald-300 dark:hover:border-emerald-700"
@@ -661,14 +701,14 @@ export default function App() {
                     >
                       <div 
                         className={clsx(
-                          "w-3 h-3 rounded-full flex-shrink-0 transition-transform duration-200",
+                          "w-3.5 h-3.5 mt-0.5 sm:mt-0 rounded-full flex-shrink-0 transition-transform duration-200",
                           isSelected ? "scale-110" : "group-hover:scale-110"
                         )}
                         style={{ backgroundColor: isSelected ? color : 'transparent', border: `2px solid ${isSelected ? color : '#CBD5E1'}` }}
                       />
                       <span className={clsx(
-                        "text-[13px] font-medium leading-snug",
-                        isSelected ? "text-slate-900 dark:text-slate-100" : "text-slate-600 dark:text-slate-400"
+                        "text-[12px] sm:text-[13px] font-medium leading-snug",
+                        isSelected ? "text-slate-900 dark:text-slate-100 font-bold" : "text-slate-600 dark:text-slate-400"
                       )}>
                         {fund}
                       </span>
@@ -677,7 +717,6 @@ export default function App() {
                 })}
               </div>
             </div>
-
           </>
         )}
       </div>
