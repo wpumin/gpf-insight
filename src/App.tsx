@@ -719,7 +719,7 @@ export default function App() {
             {/* --- 5. AI Strategy & Interactive Tools --- */}
             <div className="lg:col-span-4 order-5 space-y-6">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <DynamicHoldSimulator data={formattedData} allFunds={allFunds} />
+                <DynamicHoldSimulator data={formattedData} allFunds={allFunds} customMix={customMix} />
                 <CustomMixBuilder allFunds={allFunds} onMixChange={setCustomMix} />
               </div>
               
