@@ -7,11 +7,14 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer
 } from 'recharts';
-import { Loader2, TrendingUp, TrendingDown, Sparkles, ArrowRight, Shield, ChevronLeft, ChevronRight, Activity, Gauge, Coffee } from 'lucide-react';
+import { Loader2, TrendingUp, TrendingDown, Sparkles, ArrowRight, Shield, ChevronLeft, ChevronRight, Activity, Gauge, Coffee, RefreshCcw } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import clsx from 'clsx';
 import { format, parseISO, subYears } from 'date-fns';
+import { doc, getDocFromServer, collection, getDocs, query, orderBy } from 'firebase/firestore';
+import { db } from './firebase';
 import { DynamicHoldSimulator } from './components/DynamicHoldSimulator';
+import { CustomMixBuilder, AlertMessenger } from './components/InvestmentTools';
 
 const FUNDS_MAP: Record<string, string> = {
   UNIT_COST1: "แผนลงทุนพื้นฐานทั่วไป",
@@ -63,12 +66,20 @@ const FearAndGreedCard = () => {
   else if (score > 75) { colorClass = "text-emerald-500"; }
   else if (score > 55) { colorClass = "text-emerald-400"; }
 
+  const ratingThai: Record<string, string> = {
+    'extreme_fear': 'กลัวอย่างรุนแรง',
+    'fear': 'ความกลัว',
+    'neutral': 'สมดุล',
+    'greed': 'ความโลภ',
+    'extreme_greed': 'โลภอย่างรุนแรง'
+  };
+
   return (
     <div className="bg-white dark:bg-slate-900 rounded-[20px] shadow-[0_4px_6px_-1px_rgba(0,0,0,0.05)] border border-slate-200 dark:border-slate-800 p-5 flex flex-col h-[180px] group">
        <div className="flex justify-between items-center mb-2">
           <div className="flex items-center gap-1.5">
              <Gauge className="w-4 h-4 text-indigo-500" />
-             <span className="text-[11px] font-bold text-slate-800 dark:text-slate-200 uppercase tracking-widest">Market Mood</span>
+             <span className="text-[11px] font-bold text-slate-800 dark:text-slate-200 uppercase tracking-widest">อารมณ์ตลาดโลก</span>
           </div>
        </div>
        <div className="flex-1 flex flex-col items-center justify-center pt-2">
@@ -83,12 +94,30 @@ const FearAndGreedCard = () => {
              <div className="text-3xl font-black text-slate-800 dark:text-white z-20 leading-none">{score}</div>
           </div>
           <div className={clsx("text-xs font-black uppercase tracking-wider", colorClass)}>
-            {rating.replace('_', ' ')}
+            {ratingThai[rating.toLowerCase()] || rating.replace('_', ' ')}
           </div>
        </div>
     </div>
   );
 };
+// ------------------------------------------
+
+// --- System Activity Card ---
+const ActivityCard = () => (
+  <div className="bg-white dark:bg-slate-900 text-slate-800 dark:text-white border border-slate-200 dark:border-slate-800 rounded-[20px] p-5 flex flex-col justify-between shadow-[0_4px_6px_-1px_rgba(0,0,0,0.05)] h-[180px] w-full">
+    <div className="flex items-center justify-between">
+      <span className="text-xs text-slate-500 dark:text-slate-400 font-medium uppercase tracking-wider">สถานะระบบ</span>
+      <Activity className="w-4 h-4 text-emerald-500 dark:text-emerald-400 opacity-80" />
+    </div>
+    <div className="flex items-center gap-2 mt-4 flex-1">
+      <div className="w-2.5 h-2.5 bg-emerald-500 dark:bg-emerald-400 rounded-full animate-pulse shadow-[0_0_8px_rgba(16,185,129,0.8)] dark:shadow-[0_0_8px_rgba(52,211,153,0.8)]"></div>
+      <span className="text-sm font-medium">กำลังซิงค์ข้อมูล</span>
+    </div>
+    <p className="text-[11px] mt-2 text-slate-500 dark:text-slate-400 font-medium leading-relaxed">
+      การเชื่อมต่อ: ปกติ<br/>แหล่งข้อมูล: gpf.or.th (Thai2019)<br/>ตารางอัปเดต: ทุกวัน 12:00 น.
+    </p>
+  </div>
+);
 // ------------------------------------------
 
 // --- AI Insights Carousel Component ---
@@ -142,46 +171,47 @@ const AiInsightCarousel = ({ data, allFunds }: { data: any[], allFunds: string[]
     const defensive = perfs.find(p => p.fund.includes('ตราสารหนี้') || p.fund.includes('ตลาดเงิน')) || perfs[perfs.length / 2 | 0];
 
     // Global News & Macro Context mapping based on Real Data
-    const isBullMarket = best.diff > 2.0;
-    const isBearMarket = worst.diff < -2.0;
-    
-    let marketCommentary = '';
-    if (isBullMarket) {
-      marketCommentary = 'ได้ประโยชน์จากกระแสเงินทุนไหลเข้าสินทรัพย์เสี่ยง (Risk-on) ในตลาดโลก และแนวโน้มดอกเบี้ยขาลงของ FED';
-    } else if (isBearMarket) {
-      marketCommentary = 'ได้รับแรงกดดันจากความกังวลเศรษฐกิจโลกชะลอตัวและการปรับฐานของตลาดหุ้นภูมิภาค (Correction Phase)';
-    } else {
-      marketCommentary = 'มีโมเมนตัมที่ค่อยๆ ปรับตัวรับรู้ข่าวการดำเนินนโยบายการเงินและการเมืองทั่วโลก แบบ Sideways';
-    }
+    const safestFund = perfs.find(p => p.fund.includes('ตราสารหนี้') || p.fund.includes('ตลาดเงิน')) || perfs[perfs.length-1];
+    const riskAssetText = perfs[0]?.diff > 1 ? "สินทรัพย์เสี่ยง (Risk Assets) ทั่วโลกเริ่มฟื้นตัวจากตัวเลขเงินเฟ้อที่ชะลอตัว" : "นักลงทุนทั่วโลกเริ่มมีความกังวลต่อเสถียรภาพเศรษฐกิจข้ามชาติ";
 
     return [
       {
         id: 1,
-        title: "Global Macro & Top Mover 🌍",
+        title: "สรุปข่าวเด่น: ความเคลื่อนไหวตลาดโลก 🌍",
         icon: <TrendingUp className="w-5 h-5 text-emerald-500" />,
         text: (
           <span>
-            <strong className="text-emerald-500">{best.fund}</strong> เติบโตนำตลาด <strong className="text-emerald-500">{(best.diff >= 0 ? '+' : '')}{best.diff.toFixed(2)}%</strong> ในเดือนนี้ {marketCommentary}
+            <strong className="text-emerald-500">{best.fund}</strong> ทะยานขึ้น <strong className="text-emerald-500">{(best.diff >= 0 ? '+' : '')}{best.diff.toFixed(2)}%</strong> {riskAssetText} ซึ่งเป็นปัจจัยบวกโดยตรงต่อกองทุนชุดนี้
           </span>
         )
       },
       {
         id: 2,
-        title: "Risk Analysis & Portfolio Strategy ⚖️",
+        title: "มุมมองมหภาคและกลยุทธ์สับเปลี่ยน ⚖️",
         icon: <ArrowRight className="w-5 h-5 text-amber-500" />,
         text: (
           <span>
-            กองทุนกลุ่มล้าหลังอย่าง <strong className="text-slate-700 dark:text-slate-300">{worst.fund}</strong> ({(worst.diff >= 0 ? '+' : '')}{worst.diff.toFixed(2)}%) เริ่มส่งสัญญาณพักตัว อาจใช้โอกาสนี้ <strong className="text-amber-500">Rebalance Portfolio</strong> ด้วยการเก็บสะสมกรณีเป็นนักลงทุนระยะยาว
+            ในขณะที่ <strong className="text-slate-700 dark:text-slate-300">{worst.fund}</strong> ยังพักตัว แนะนำให้ลองพิจารณา <strong className="text-amber-500">"สับเปลี่ยนแผน"</strong> เพื่อกระจายไปสู่สินทรัพย์ที่มีแนวโน้มฟื้นตัวเร็วกว่าตามรอบเศรษฐกิจโลก
           </span>
         )
       },
       {
         id: 3,
-        title: "Safe Haven Insight 🛡️",
+        title: "ทิศทางสินทรัพย์ปลอดภัย 🛡️",
         icon: <Shield className="w-5 h-5 text-blue-500" />,
         text: (
           <span>
-            เมื่อตลาดเผชิญความผันผวนจากข่าวภูมิรัฐศาสตร์ <strong className="text-blue-500">{defensive.fund}</strong> ทำหน้าที่เป็น Safe Haven ที่ดีด้วยอัตราเร่งคงที่ <strong className="text-blue-500">{(defensive.diff >= 0 ? '+' : '')}{defensive.diff.toFixed(2)}%</strong> ช่วยลด Volatility โดยรวมของพอร์ต
+            ความผันผวนของค่าเงินส่งผลให้ <strong className="text-blue-500">{safestFund.fund}</strong> ยังคงรักษาเสถียรภาพได้ดี เหมาะเป็นจุดพักเงินของพอร์ตในช่วงที่รอข่าวการประชุมนโยบายการเงินครั้งใหญ่
+          </span>
+        )
+      },
+      {
+        id: 4,
+        title: "ภาพรวมเศรษฐกิจรายวัน 📊",
+        icon: <Sparkles className="w-5 h-5 text-indigo-500" />,
+        text: (
+          <span>
+            ภาพรวมการลงทุนวันนี้มีทิศทาง {best.diff > 0.05 ? 'เป็นบวกชัดเจน' : 'ค่อนข้างทรงตัว'} แนะนำจับตาดูราคา NAV ของวันพรุ่งนี้ เพื่อยืนยันแนวโน้มการเปลี่ยนเทรนด์ในระยะกลาง
           </span>
         )
       }
@@ -205,7 +235,7 @@ const AiInsightCarousel = ({ data, allFunds }: { data: any[], allFunds: string[]
       <div className="flex justify-between items-start mb-3 gap-2">
         <div className="flex items-center gap-1.5 shrink-0">
           <Sparkles className="w-4 h-4 text-emerald-500" fill="currentColor" />
-          <span className="text-[11px] font-bold text-slate-800 dark:text-slate-200 uppercase tracking-widest whitespace-nowrap">AI Insights</span>
+          <span className="text-[11px] font-bold text-slate-800 dark:text-slate-200 uppercase tracking-widest whitespace-nowrap">AI วิเคราะห์ตลาด</span>
         </div>
         <span className="text-[10px] text-slate-500 bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded-full font-medium text-right leading-tight border border-slate-200 dark:border-slate-700/50">
           อัปเดตทุกวัน
@@ -273,6 +303,7 @@ export default function App() {
   
   const allFunds = Object.values(FUNDS_MAP);
   const [selectedFunds, setSelectedFunds] = useState<string[]>(['แผนลงทุนพื้นฐานทั่วไป', 'แผนเชิงรุก 65']);
+  const [customMix, setCustomMix] = useState<any[]>([]);
 
   useEffect(() => {
     document.documentElement.classList.toggle('dark', theme === 'dark');
@@ -293,8 +324,15 @@ export default function App() {
   useEffect(() => {
     const fetchFromFirebase = async (isInitial = false) => {
       try {
-        const { collection, getDocs, query, orderBy } = await import('firebase/firestore');
-        const { db } = await import('./firebase');
+        if (isInitial) {
+          // Connection test first as recommended
+          try {
+            await getDocFromServer(doc(db, 'test', 'connection'));
+          } catch (connErr) {
+            console.warn("Initial connection test failed (expected if 'test/connection' doc doesn't exist), proceeding to fetch real data.");
+          }
+        }
+
         const q = query(collection(db, 'nav_history'), orderBy('date', 'asc'));
         const querySnapshot = await getDocs(q);
         const fetchedData: any[] = [];
@@ -302,7 +340,6 @@ export default function App() {
           fetchedData.push(doc.data());
         });
         
-        // Update state only if data actually changed to prevent any unnecessary flickering
         setData(prevData => {
           const isDifferent = JSON.stringify(prevData) !== JSON.stringify(fetchedData);
           return isDifferent ? fetchedData : prevData;
@@ -310,7 +347,7 @@ export default function App() {
         
         if (isInitial) setLoading(false);
       } catch(e) {
-        console.error(e);
+        console.error("Firestore sync error:", e);
         if (isInitial) setLoading(false);
       }
     };
@@ -365,6 +402,20 @@ export default function App() {
     return formattedData.filter(d => parseISO(d.date) >= cutoffDate);
   }, [formattedData, timeFilter]);
 
+  const chartDataWithMix = useMemo(() => {
+    if (!customMix || customMix.length === 0) return chartData;
+    return chartData.map(d => {
+      let mixValue = 0;
+      customMix.forEach(m => {
+        const rawValue = Number(d[m.fund]);
+        if (!isNaN(rawValue)) {
+          mixValue += (rawValue * m.percentage) / 100;
+        }
+      });
+      return { ...d, "My Mix": mixValue };
+    });
+  }, [chartData, customMix]);
+
   const CustomTooltip = ({ active, payload, label }: any) => {
     if (active && payload && payload.length) {
       return (
@@ -398,9 +449,9 @@ export default function App() {
           </div>
           <div className="flex items-center gap-2 sm:gap-4 shrink-0">
             <div className="text-right hidden md:block">
-              <p className="text-xs text-slate-400 dark:text-slate-500 uppercase tracking-wider font-semibold">Last Updated</p>
+              <p className="text-xs text-slate-400 dark:text-slate-500 uppercase tracking-wider font-semibold">อัปเดตล่าสุด</p>
               <p className="text-sm font-mono text-slate-600 dark:text-slate-300">
-                {latestData ? latestData.displayDate : 'Loading...'}
+                {latestData ? latestData.displayDate : 'กำลังโหลด...'}
               </p>
             </div>
             
@@ -422,7 +473,7 @@ export default function App() {
                   theme === 'light' ? "bg-white text-slate-800 shadow-sm" : "text-slate-500 hover:text-slate-700 dark:hover:text-slate-300"
                 )}
               >
-                Light
+                สว่าง
               </button>
               <button
                 onClick={() => setTheme('dark')}
@@ -431,81 +482,31 @@ export default function App() {
                   theme === 'dark' ? "bg-slate-700 text-white shadow-sm" : "text-slate-500 hover:text-slate-700 dark:hover:text-slate-300"
                 )}
               >
-                Dark
+                มืด
               </button>
             </div>
           </div>
         </header>
 
         {loading ? (
-          <>
-            {/* Main Chart Shimmer */}
-            <div className="lg:col-span-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-[20px] p-5 shadow-sm min-h-[400px] flex flex-col">
-              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-4">
-                <div className="space-y-3 w-full sm:w-auto">
-                   <div className="w-48 h-6 bg-slate-200 dark:bg-slate-800 rounded-md animate-pulse"></div>
-                   <div className="w-64 h-4 bg-slate-100 dark:bg-slate-800/50 rounded-md animate-pulse"></div>
-                </div>
-                <div className="flex gap-2">
-                   <div className="w-[124px] h-8 bg-slate-100 dark:bg-slate-800 rounded-lg animate-pulse"></div>
-                </div>
-              </div>
-              <div className="flex-grow w-full bg-slate-50 dark:bg-slate-800/20 rounded-xl border border-slate-100 dark:border-slate-800/50 animate-pulse"></div>
-            </div>
-
-            {/* Sidebar Skeletons */}
-            <div className="lg:col-span-1 grid grid-cols-1 md:grid-cols-3 lg:grid-cols-1 gap-4">
-              <div className="bg-white dark:bg-slate-900 rounded-[20px] p-5 min-h-[200px] border border-slate-200 dark:border-slate-800 animate-pulse flex flex-col w-full">
-                <div className="flex justify-between items-start mb-4">
-                  <div className="w-20 h-4 bg-emerald-100 dark:bg-emerald-900/30 rounded-md"></div>
-                  <div className="w-16 h-4 bg-slate-100 dark:bg-slate-800/50 rounded-full"></div>
-                </div>
-                <div className="w-3/4 h-5 bg-slate-200 dark:bg-slate-800 rounded-md mb-3 mt-2"></div>
-                <div className="w-full h-3.5 bg-slate-100 dark:bg-slate-800/50 rounded-md mb-2"></div>
-                <div className="w-5/6 h-3.5 bg-slate-100 dark:bg-slate-800/50 rounded-md mb-2"></div>
-                <div className="w-4/6 h-3.5 bg-slate-100 dark:bg-slate-800/50 rounded-md"></div>
-              </div>
-              <div className="bg-white dark:bg-slate-900 rounded-[20px] p-5 h-[180px] border border-slate-200 dark:border-slate-800 animate-pulse flex flex-col items-center justify-center w-full relative">
-                <div className="w-24 h-4 bg-slate-200 dark:bg-slate-800 rounded-md mb-6 absolute top-5 left-5"></div>
-                <div className="w-32 h-16 bg-slate-200 dark:bg-slate-800 rounded-t-full mb-4"></div>
-                <div className="w-16 h-4 bg-slate-200 dark:bg-slate-800 rounded-md"></div>
-              </div>
-            </div>
-
-            {/* Bottom Cards Shimmer */}
-            <div className="lg:col-span-4 mt-2">
-               <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-4 px-1 gap-2">
-                  <div className="w-64 h-6 bg-slate-200 dark:bg-slate-800 rounded-md animate-pulse"></div>
-               </div>
-               <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
-                 {[...Array(4)].map((_, i) => (
-                   <div key={`shimmer-card-${i}`} className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-[20px] p-5 h-[130px] animate-pulse flex flex-col justify-between">
-                      <div className="w-full h-4 bg-slate-100 dark:bg-slate-800/50 rounded-md"></div>
-                      <div className="mt-4">
-                        <div className="w-24 h-7 bg-slate-200 dark:bg-slate-800 rounded-md mb-1.5"></div>
-                        <div className="w-16 h-3.5 bg-emerald-100 dark:bg-emerald-900/30 rounded-md"></div>
-                      </div>
-                   </div>
-                 ))}
-               </div>
-            </div>
-          </>
+          <div className="lg:col-span-4 h-64 flex items-center justify-center">
+            <Loader2 className="w-8 h-8 animate-spin text-emerald-500" />
+          </div>
         ) : data.length === 0 ? (
           <div className="lg:col-span-4 text-center py-20 bg-white dark:bg-slate-900 rounded-[20px] border border-slate-200 dark:border-slate-800 shadow-sm">
-            <p className="text-slate-500 dark:text-slate-400 font-medium">No data available right now. Background sync might still be running...</p>
+            <p className="text-slate-500 dark:text-slate-400 font-medium">ไม่พบข้อมูลในขณะนี้ ระบบกำลังรอการซิงค์ข้อมูลจากเซิร์ฟเวอร์...</p>
           </div>
         ) : (
           <>
-            {/* Chart */}
-            <div className="lg:col-span-3 order-1 lg:order-1 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-[20px] p-5 shadow-[0_4px_6px_-1px_rgba(0,0,0,0.05)] hover:border-emerald-500 dark:hover:border-emerald-500 transition-colors duration-200 flex flex-col min-h-[400px]">
+            {/* --- 1. Interactive Chart Section (Top Priority) --- */}
+            <div className="lg:col-span-3 order-1 lg:order-1 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-[20px] p-5 shadow-[0_4px_6px_-1px_rgba(0,0,0,0.05)] hover:border-indigo-500 dark:hover:border-indigo-500 transition-colors duration-200 flex flex-col min-h-[400px]">
               <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-4">
                 <div>
-                  <h2 className="text-lg font-bold text-slate-800 dark:text-white">Performance History</h2>
-                  <p className="text-xs text-slate-500 dark:text-slate-400 font-medium mt-1">Daily NAV tracking for selected portfolios</p>
+                  <h2 className="text-lg font-bold text-slate-800 dark:text-white">กราฟแสดงผลตอบแทนย้อนหลัง</h2>
+                  <p className="text-xs text-slate-500 dark:text-slate-400 font-medium mt-1">ติดตามมูลค่า NAV รายวันของแผนที่เลือก</p>
                 </div>
                 
                 <div className="flex items-center gap-3">
-                   {/* Time Filter */}
                    <div className="flex bg-slate-100 dark:bg-slate-800 p-1 rounded-lg">
                     {(['1Y', '3Y', 'MAX'] as const).map(tf => (
                       <button
@@ -524,10 +525,9 @@ export default function App() {
                    </div>
                 </div>
               </div>
-              
               <div className="flex-grow w-full mt-4">
                 <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={chartData} margin={{ top: 10, right: 5, left: 0, bottom: 0 }}>
+                  <LineChart data={chartDataWithMix} margin={{ top: 10, right: 5, left: 0, bottom: 0 }}>
                     <CartesianGrid 
                       strokeDasharray="3 3"
                       vertical={true}
@@ -557,7 +557,7 @@ export default function App() {
                       content={<CustomTooltip />} 
                       cursor={{ stroke: theme === 'dark' ? '#334155' : '#CBD5E1', strokeWidth: 2 }} 
                     />
-                    {selectedFunds.map((fund, idx) => (
+                    {selectedFunds.map((fund) => (
                       <Line
                         key={fund}
                         type="monotone"
@@ -574,39 +574,37 @@ export default function App() {
                         }}
                       />
                     ))}
+                    {customMix.length > 0 && (
+                      <Line
+                        type="monotone"
+                        dataKey="My Mix"
+                        name="My Custom Mix"
+                        stroke="#6366f1"
+                        strokeWidth={4}
+                        strokeDasharray="8 4"
+                        dot={false}
+                        activeDot={{ 
+                          r: 7, 
+                          strokeWidth: 2, 
+                          stroke: theme === 'dark' ? '#0F172A' : '#FFFFFF',
+                          fill: "#6366f1" 
+                        }}
+                      />
+                    )}
                   </LineChart>
                 </ResponsiveContainer>
               </div>
             </div>
 
-            {/* Sidebar Data: AI Insights & System Status */}
-            <div className="lg:col-span-1 order-4 lg:order-2 grid grid-cols-1 md:grid-cols-3 lg:grid-cols-1 gap-4">
+            {/* --- 2. Sidebar Data: AI Insights & System Status (Keep adjacent to chart on desktop, moved down on mobile) --- */}
+            <div className="lg:col-span-1 order-4 lg:order-2 space-y-4">
               <AiInsightCarousel data={formattedData} allFunds={allFunds} />
-              
               <FearAndGreedCard />
-              
-              <div className="bg-white dark:bg-slate-900 text-slate-800 dark:text-white border border-slate-200 dark:border-slate-800 rounded-[20px] p-5 flex flex-col justify-between shadow-[0_4px_6px_-1px_rgba(0,0,0,0.05)] h-[180px] w-full">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs text-slate-500 dark:text-slate-400 font-medium uppercase tracking-wider">System Status</span>
-                  <Activity className="w-4 h-4 text-emerald-500 dark:text-emerald-400 opacity-80" />
-                </div>
-                <div className="flex items-center gap-2 mt-4 flex-1">
-                  <div className="w-2.5 h-2.5 bg-emerald-500 dark:bg-emerald-400 rounded-full animate-pulse shadow-[0_0_8px_rgba(16,185,129,0.8)] dark:shadow-[0_0_8px_rgba(52,211,153,0.8)]"></div>
-                  <span className="text-sm font-medium">Syncing actively</span>
-                </div>
-                <p className="text-[11px] mt-2 text-slate-500 dark:text-slate-400 font-medium leading-relaxed">
-                  Web Scraper connection: Active<br/>Source: gpf.or.th (Thai2019)<br/>Current Schedule: Every day 12:00 PM ICT
-                </p>
-              </div>
+              <ActivityCard />
             </div>
 
-            {/* AI Strategy Simulator */}
-            <div className="lg:col-span-4 order-5 lg:order-3">
-              <DynamicHoldSimulator data={formattedData} allFunds={allFunds} />
-            </div>
-
-            {/* Comparison Cards Limit info and Cards */}
-            <div className="lg:col-span-4 order-3 lg:order-3 mt-2">
+            {/* --- 3. Performance Cards --- */}
+            <div className="lg:col-span-4 order-2 lg:order-3">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-4 px-1 gap-2">
                 <h3 className="text-base font-bold text-slate-800 dark:text-slate-200 tracking-tight flex items-center gap-2">
                   เปรียบเทียบผลการดำเนินงาน 1 วันล่าสุด
@@ -620,7 +618,7 @@ export default function App() {
               
               <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
                 <AnimatePresence mode="popLayout">
-                  {selectedFunds.slice(0, 4).map((fund, idx) => {
+                  {selectedFunds.slice(0, 4).map((fund) => {
                     const currentVal = latestData ? latestData[fund] : null;
                     const prevVal = previousData ? previousData[fund] : null;
                     const diff = currentVal && prevVal && prevVal !== 0 ? ((currentVal - prevVal) / prevVal) * 100 : 0;
@@ -671,18 +669,18 @@ export default function App() {
               </div>
             </div>
 
-            <div className="lg:col-span-4 order-2 lg:order-4 bg-white dark:bg-slate-900 rounded-[20px] shadow-[0_4px_6px_-1px_rgba(0,0,0,0.05)] border border-slate-200 dark:border-slate-800 p-4 sm:p-5 mt-0 lg:mt-2 lg:hover:border-emerald-500 dark:lg:hover:border-emerald-500 transition-colors duration-200">
+            {/* --- 4. Fund Filter Section --- */}
+            <div className="lg:col-span-4 order-3 lg:order-4 bg-white dark:bg-slate-900 rounded-[20px] shadow-[0_4px_6px_-1px_rgba(0,0,0,0.05)] border border-slate-200 dark:border-slate-800 p-4 sm:p-5 mt-0 transition-colors duration-200">
               <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4 gap-2">
                 <div className="flex items-center gap-2">
-                  <h3 className="text-sm font-bold text-slate-800 dark:text-slate-200 uppercase tracking-wider">Configure Portfolios</h3>
+                  <h3 className="text-sm font-bold text-slate-800 dark:text-slate-200 uppercase tracking-wider">Filter กองทุน</h3>
                   <div className="hidden sm:flex bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 text-[10px] font-bold px-2 py-0.5 rounded-full items-center">
-                    <Activity className="w-3 h-3 mr-1" /> Tap to update chart
+                    <Activity className="w-3 h-3 mr-1" /> แตะเพื่ออัปเดตกราฟ
                   </div>
                 </div>
-                <span className="text-xs font-medium text-slate-500 bg-slate-100 dark:bg-slate-800 px-3 py-1 rounded-full whitespace-nowrap border border-slate-200 dark:border-slate-700/50">{selectedFunds.length} selected</span>
+                <span className="text-xs font-medium text-slate-500 bg-slate-100 dark:bg-slate-800 px-3 py-1 rounded-full border border-slate-200 dark:border-slate-700/50">เลือกไว้ {selectedFunds.length} แผน</span>
               </div>
               
-              {/* Flex Column on Mobile, Grid on Desktop */}
               <div className="flex flex-col sm:grid sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
                 {allFunds.map((fund) => {
                   const isSelected = selectedFunds.includes(fund);
@@ -716,6 +714,17 @@ export default function App() {
                   );
                 })}
               </div>
+            </div>
+
+            {/* --- 5. AI Strategy & Interactive Tools --- */}
+            <div className="lg:col-span-4 order-5 space-y-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <DynamicHoldSimulator data={formattedData} allFunds={allFunds} />
+                <CustomMixBuilder allFunds={allFunds} onMixChange={setCustomMix} />
+              </div>
+              
+              {/* Market Strategy Alerts at the very bottom */}
+              <AlertMessenger data={formattedData} allFunds={allFunds} />
             </div>
           </>
         )}

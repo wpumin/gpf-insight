@@ -93,7 +93,7 @@ export const DynamicHoldSimulator = ({ data, allFunds }: { data: any[], allFunds
             setResult(null);
           }}
         >
-          <option value="" disabled>เลือกกองทุนที่คุณถืออยู่ ณ ปัจจุบัน...</option>
+          <option value="" disabled>เลือกโครงการที่ท่านถือครองอยู่...</option>
           {allFunds.map(f => <option key={f} value={f}>{f}</option>)}
         </select>
         <button 
@@ -108,7 +108,7 @@ export const DynamicHoldSimulator = ({ data, allFunds }: { data: any[], allFunds
           ) : (
             <ArrowRight className="w-4 h-4" />
           )}
-          {analyzing ? 'กำลังวิเคราะห์...' : 'ประเมินแผน'}
+          {analyzing ? 'กำลังวิเคราะห์แผน...' : 'วิเคราะห์กลยุทธ์'}
         </button>
       </div>
 
@@ -124,9 +124,11 @@ export const DynamicHoldSimulator = ({ data, allFunds }: { data: any[], allFunds
             </div>
             <div>
               <div className="flex items-center gap-2 mb-1.5">
-                <h4 className="text-base font-black tracking-wide">{result.action}</h4>
+                <h4 className="text-base font-black tracking-wide">
+                  {result.action === 'HOLD' ? 'ถือครองต่อ' : result.action === 'SWITCH' ? 'ควรสับเปลี่ยน' : 'เฝ้าระวัง'}
+                </h4>
                 <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-white dark:bg-slate-900 shadow-sm opacity-90 border border-current">
-                  แนวโน้มย้อนหลัง: {result.currentPerf > 0 ? '+' : ''}{result.currentPerf.toFixed(2)}%
+                  แนวโน้ม 1 เดือน: {result.currentPerf > 0 ? '+' : ''}{result.currentPerf.toFixed(2)}%
                 </span>
               </div>
               <p className="text-[12.5px] font-medium leading-relaxed opacity-95">
