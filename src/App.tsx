@@ -215,8 +215,9 @@ function AppContent() {
     <BrowserRouter>
       <div className={clsx(
         "min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 transition-colors duration-200",
-        "md:pt-16 pb-20 md:pb-8"
+        "pt-20 md:pt-16 pb-20 md:pb-8"
       )}>
+        <MobileHeader theme={theme} setTheme={setTheme} />
         <DesktopHeader 
           theme={theme} setTheme={setTheme} 
           latestData={latestData} formatThaiDate={formatThaiDate} 
@@ -280,6 +281,25 @@ const formatThaiDate = (dateStr: string) => {
   }
 };
 
+const MobileHeader = ({ theme, setTheme }: any) => {
+  return (
+    <header className="fixed top-0 left-0 right-0 z-50 bg-white/80 dark:bg-slate-950/80 backdrop-blur-xl border-b border-slate-200 dark:border-slate-800 md:hidden h-14 flex items-center justify-between px-4">
+      <div className="flex items-center gap-2">
+         <div className="w-8 h-8 bg-emerald-600 rounded-lg flex items-center justify-center shadow-lg shadow-emerald-500/20">
+           <TrendingUp className="w-5 h-5 text-white" />
+         </div>
+         <h1 className="text-lg font-black text-slate-800 dark:text-white tracking-tight">GPF Insight</h1>
+      </div>
+      <button
+        onClick={() => setTheme(theme === 'light' ? 'dark' : 'light')}
+        className="w-10 h-10 flex items-center justify-center rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 transition-colors"
+      >
+        {theme === 'light' ? <Moon className="w-4 h-4" /> : <Sun className="w-4 h-4" />}
+      </button>
+    </header>
+  );
+};
+
 const ProfileMenu = ({ user, logout }: any) => {
   const [isOpen, setIsOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -324,20 +344,6 @@ const ProfileMenu = ({ user, logout }: any) => {
             exit={{ opacity: 0, y: 10, scale: 0.95 }}
             className="absolute right-0 mt-2 w-56 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-[2rem] shadow-2xl overflow-hidden p-2"
           >
-            <div className="px-4 py-3 border-b border-slate-100 dark:border-slate-800 mb-1">
-              <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Account</p>
-              <p className="text-xs font-bold text-slate-800 dark:text-white truncate">{user.email}</p>
-            </div>
-            
-            <button className="w-full flex items-center gap-3 px-4 py-3 text-xs font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 rounded-2xl transition-all">
-              <UserIcon className="w-4 h-4" />
-              <span>Personal Info</span>
-            </button>
-            <button className="w-full flex items-center gap-3 px-4 py-3 text-xs font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 rounded-2xl transition-all">
-              <Settings className="w-4 h-4" />
-              <span>Preferences</span>
-            </button>
-            
             <div className="h-px bg-slate-100 dark:bg-slate-800 my-1 mx-2" />
             
             <button 
@@ -543,7 +549,7 @@ const DesktopHeader = ({ theme, setTheme, latestData, formatThaiDate }: any) => 
             {pathname === '/' && (
               <motion.div 
                 layoutId="active-pill"
-                className="absolute inset-0 bg-emerald-50 dark:bg-emerald-500/10 rounded-[1.5rem] -z-10"
+                className="absolute inset-x-1 inset-y-1 bg-emerald-50 dark:bg-emerald-500/10 rounded-[1.8rem] -z-10"
                 transition={{ type: "spring", bounce: 0.2, duration: 0.6 }}
               />
             )}
@@ -558,7 +564,7 @@ const DesktopHeader = ({ theme, setTheme, latestData, formatThaiDate }: any) => 
             {pathname === '/portfolio' && (
               <motion.div 
                 layoutId="active-pill"
-                className="absolute inset-0 bg-emerald-50 dark:bg-emerald-500/10 rounded-[1.5rem] -z-10"
+                className="absolute inset-x-1 inset-y-1 bg-emerald-50 dark:bg-emerald-500/10 rounded-[1.8rem] -z-10"
                 transition={{ type: "spring", bounce: 0.2, duration: 0.6 }}
               />
             )}
@@ -573,7 +579,7 @@ const DesktopHeader = ({ theme, setTheme, latestData, formatThaiDate }: any) => 
             {pathname === '/calculator' && (
               <motion.div 
                 layoutId="active-pill"
-                className="absolute inset-0 bg-emerald-50 dark:bg-emerald-500/10 rounded-[1.5rem] -z-10"
+                className="absolute inset-x-1 inset-y-1 bg-emerald-50 dark:bg-emerald-500/10 rounded-[1.8rem] -z-10"
                 transition={{ type: "spring", bounce: 0.2, duration: 0.6 }}
               />
             )}
@@ -588,7 +594,7 @@ const DesktopHeader = ({ theme, setTheme, latestData, formatThaiDate }: any) => 
             {pathname === '/profile' && (
               <motion.div 
                 layoutId="active-pill"
-                className="absolute inset-0 bg-emerald-50 dark:bg-emerald-500/10 rounded-[1.5rem] -z-10"
+                className="absolute inset-x-1 inset-y-1 bg-emerald-50 dark:bg-emerald-500/10 rounded-[1.8rem] -z-10"
                 transition={{ type: "spring", bounce: 0.2, duration: 0.6 }}
               />
             )}
