@@ -369,9 +369,27 @@ const ProfilePage = ({ user, logout, signInWithGoogle }: any) => {
         </div>
         <button 
           onClick={signInWithGoogle}
-          className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-4 px-8 rounded-2xl shadow-lg shadow-emerald-500/20 active:scale-95 transition-all text-sm"
+          className="flex items-center gap-3 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 font-bold py-4 px-8 rounded-2xl shadow-lg shadow-slate-200/50 dark:shadow-none active:scale-95 transition-all text-sm"
         >
-          เข้าสู่ระบบด้วย Google
+          <svg className="w-5 h-5" viewBox="0 0 24 24">
+            <path
+              fill="currentColor"
+              d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
+            />
+            <path
+              fill="currentColor"
+              d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
+            />
+            <path
+              fill="currentColor"
+              d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l3.66-2.84z"
+            />
+            <path
+              fill="currentColor"
+              d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 12-4.53z"
+            />
+          </svg>
+          เข้าสู่ระบบด้วยบัญชี Google
         </button>
       </div>
     );
@@ -514,62 +532,66 @@ const DesktopHeader = ({ theme, setTheme, latestData, formatThaiDate }: any) => 
     const { pathname } = useLocation();
     
     return (
-      <nav className="fixed bottom-0 left-0 right-0 z-[60] bg-white/80 dark:bg-slate-900/80 backdrop-blur-2xl border-t border-slate-200 dark:border-slate-800 md:hidden pb-[env(safe-area-inset-bottom)]">
-        <div className="flex justify-between items-center h-16 px-8">
+      <nav className="fixed bottom-6 left-4 right-4 z-[60] md:hidden">
+        <div className="bg-white/90 dark:bg-slate-900/90 backdrop-blur-3xl border border-slate-200/50 dark:border-white/10 shadow-2xl shadow-emerald-500/10 rounded-[2rem] px-2 py-2 flex justify-between items-center relative overflow-hidden">
           <Link to="/" className={clsx(
-            "flex flex-col items-center gap-1 transition-all relative group",
-            pathname === '/' ? "text-emerald-600 dark:text-emerald-400" : "text-slate-400"
+            "flex-1 flex flex-col items-center gap-1.5 py-3 transition-colors relative z-10",
+            pathname === '/' ? "text-emerald-600 dark:text-emerald-400" : "text-slate-400 hover:text-slate-600 dark:hover:text-slate-300"
           )}>
-            <div className={clsx(
-              "p-2 rounded-xl transition-all",
-              pathname === '/' ? "bg-emerald-100/50 dark:bg-emerald-500/20" : ""
-            )}>
-              <Activity className="w-6 h-6" />
-            </div>
-            <span className="text-[10px] font-black uppercase tracking-tight">หน้าหลัก</span>
-            {pathname === '/' && <motion.div layoutId="nav-dot" className="absolute -bottom-1 w-1 h-1 bg-emerald-500 rounded-full" />}
+            <Activity className="w-5 h-5" />
+            <span className="text-[10px] font-black uppercase tracking-tighter">หน้าหลัก</span>
+            {pathname === '/' && (
+              <motion.div 
+                layoutId="active-pill"
+                className="absolute inset-0 bg-emerald-50 dark:bg-emerald-500/10 rounded-[1.5rem] -z-10"
+                transition={{ type: "spring", bounce: 0.2, duration: 0.6 }}
+              />
+            )}
           </Link>
 
           <Link to="/portfolio" className={clsx(
-            "flex flex-col items-center gap-1 transition-all relative group",
-            pathname === '/portfolio' ? "text-emerald-600 dark:text-emerald-400" : "text-slate-400"
+            "flex-1 flex flex-col items-center gap-1.5 py-3 transition-colors relative z-10",
+            pathname === '/portfolio' ? "text-emerald-600 dark:text-emerald-400" : "text-slate-400 hover:text-slate-600 dark:hover:text-slate-300"
           )}>
-            <div className={clsx(
-              "p-2 rounded-xl transition-all",
-              pathname === '/portfolio' ? "bg-emerald-100/50 dark:bg-emerald-500/20" : ""
-            )}>
-              <Wallet className="w-6 h-6" />
-            </div>
-            <span className="text-[10px] font-black uppercase tracking-tight">พอร์ต</span>
-            {pathname === '/portfolio' && <motion.div layoutId="nav-dot" className="absolute -bottom-1 w-1 h-1 bg-emerald-500 rounded-full" />}
+            <Wallet className="w-5 h-5" />
+            <span className="text-[10px] font-black uppercase tracking-tighter">พอร์ต</span>
+            {pathname === '/portfolio' && (
+              <motion.div 
+                layoutId="active-pill"
+                className="absolute inset-0 bg-emerald-50 dark:bg-emerald-500/10 rounded-[1.5rem] -z-10"
+                transition={{ type: "spring", bounce: 0.2, duration: 0.6 }}
+              />
+            )}
           </Link>
 
           <Link to="/calculator" className={clsx(
-            "flex flex-col items-center gap-1 transition-all relative group",
-            pathname === '/calculator' ? "text-emerald-600 dark:text-emerald-400" : "text-slate-400"
+            "flex-1 flex flex-col items-center gap-1.5 py-3 transition-colors relative z-10",
+            pathname === '/calculator' ? "text-emerald-600 dark:text-emerald-400" : "text-slate-400 hover:text-slate-600 dark:hover:text-slate-300"
           )}>
-            <div className={clsx(
-              "p-2 rounded-xl transition-all",
-              pathname === '/calculator' ? "bg-emerald-100/50 dark:bg-emerald-500/20" : ""
-            )}>
-              <Sparkles className="w-6 h-6" />
-            </div>
-            <span className="text-[10px] font-black uppercase tracking-tight">เครื่องมือ</span>
-            {pathname === '/calculator' && <motion.div layoutId="nav-dot" className="absolute -bottom-1 w-1 h-1 bg-emerald-500 rounded-full" />}
+            <Sparkles className="w-5 h-5" />
+            <span className="text-[10px] font-black uppercase tracking-tighter">เครื่องมือ</span>
+            {pathname === '/calculator' && (
+              <motion.div 
+                layoutId="active-pill"
+                className="absolute inset-0 bg-emerald-50 dark:bg-emerald-500/10 rounded-[1.5rem] -z-10"
+                transition={{ type: "spring", bounce: 0.2, duration: 0.6 }}
+              />
+            )}
           </Link>
 
           <Link to="/profile" className={clsx(
-            "flex flex-col items-center gap-1 transition-all relative group",
-            pathname === '/profile' ? "text-emerald-600 dark:text-emerald-400" : "text-slate-400"
+            "flex-1 flex flex-col items-center gap-1.5 py-3 transition-colors relative z-10",
+            pathname === '/profile' ? "text-emerald-600 dark:text-emerald-400" : "text-slate-400 hover:text-slate-600 dark:hover:text-slate-300"
           )}>
-            <div className={clsx(
-              "p-2 rounded-xl transition-all",
-              pathname === '/profile' ? "bg-emerald-100/50 dark:bg-emerald-500/20" : ""
-            )}>
-              <UserIcon className="w-6 h-6" />
-            </div>
-            <span className="text-[10px] font-black uppercase tracking-tight">โปรไฟล์</span>
-            {pathname === '/profile' && <motion.div layoutId="nav-dot" className="absolute -bottom-1 w-1 h-1 bg-emerald-500 rounded-full" />}
+            <UserIcon className="w-5 h-5" />
+            <span className="text-[10px] font-black uppercase tracking-tighter">โปรไฟล์</span>
+            {pathname === '/profile' && (
+              <motion.div 
+                layoutId="active-pill"
+                className="absolute inset-0 bg-emerald-50 dark:bg-emerald-500/10 rounded-[1.5rem] -z-10"
+                transition={{ type: "spring", bounce: 0.2, duration: 0.6 }}
+              />
+            )}
           </Link>
         </div>
       </nav>
