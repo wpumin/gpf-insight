@@ -79,17 +79,26 @@ async function processDataAndSaveToFirestore(jsonArray: any[]) {
             console.error("Error saving to Firestore:", stdDate, e);
         }
     }
+    
+    // Update metadata for last successful sync
+    try {
+        const metadataRef = doc(db, 'metadata', 'sync_info');
+        await setDoc(metadataRef, { 
+            last_updated: new Date().toISOString(),
+            status: 'success'
+        }, { merge: true });
+    } catch (e) {
+        console.error("Error updating metadata:", e);
+    }
+
     return updatedCount;
 }
 
-async function runDailySync() {
-    console.log("Starting GitHub Action Daily Sync...");
-    // Force UTC timezone logic to current local time just to be safe
+export async function runSyncTask() {
+    console.log("Starting GPF Sync Task...");
     const date = new Date();
     let totalAdded = 0;
     
-    // We fetch the current month AND the previous month, 
-    // to make sure we don't miss days right around the end/start of the month overlap.
     for (let i = 0; i < 2; i++) {
         const mStr = (date.getMonth() + 1).toString().padStart(2, '0');
         const yStr = date.getFullYear().toString();
@@ -104,12 +113,14 @@ async function runDailySync() {
             console.log(`[Sync] No data found for ${mStr}/${yStr}.`);
         }
         
-        // Move to previous month
         date.setMonth(date.getMonth() - 1);
     }
     
-    console.log(`✅ Daily sync complete. Total new/updated records: ${totalAdded}`);
-    process.exit(0);
+    console.log(`✅ Sync complete. Total new/updated records: ${totalAdded}`);
+    return totalAdded;
 }
 
-runDailySync();
+// Only run immediately if executed directly (e.g. via npm run sync)
+if (import.meta.url === `file://${process.argv[1]}`) {
+    runSyncTask().then(() => process.exit(0)).catch(() => process.exit(1));
+}
