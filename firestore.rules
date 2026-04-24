@@ -1,21 +1,25 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
+    // Default deny
     match /{document=**} {
       allow read, write: if false;
     }
 
-    function isValidNavDoc(data) {
-      return data.keys().hasAll(['date']) 
-        && data.date is string 
-        && data.date.size() == 10 
-        && data.date.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$');
+    // Allow public read/write for NAV History
+    // (In production, write should be restricted to a server-side service account)
+    match /nav_history/{docId} {
+      allow read, write: if true;
     }
 
-    match /nav_history/{dateId} {
-      allow read: if true; 
-      allow create, update: if isValidNavDoc(request.resource.data);
-      allow delete: if false; 
+    // Allow public read/write for metadata (sync info)
+    match /metadata/{docId} {
+      allow read, write: if true;
+    }
+
+    // Allow connection test
+    match /test/connection {
+      allow read: if true;
     }
   }
 }
