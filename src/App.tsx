@@ -93,6 +93,25 @@ function AppContent() {
     if (typeof localStorage !== 'undefined') {
       localStorage.setItem('theme', theme);
     }
+
+    // Update dynamic theme-color for PWA/Mobile
+    const themeColor = theme === 'dark' ? '#020617' : '#f8fafc';
+    const metaTags = document.getElementsByTagName('meta');
+    let themeMetaFound = false;
+    for (let i = 0; i < metaTags.length; i++) {
+      if (metaTags[i].getAttribute('name') === 'theme-color') {
+        metaTags[i].setAttribute('content', themeColor);
+        // Remove media attribute to force the current theme color regardless of OS setting
+        metaTags[i].removeAttribute('media');
+        themeMetaFound = true;
+      }
+    }
+    if (!themeMetaFound) {
+      const meta = document.createElement('meta');
+      meta.name = 'theme-color';
+      meta.content = themeColor;
+      document.head.appendChild(meta);
+    }
   }, [theme]);
 
   useEffect(() => {
@@ -215,7 +234,7 @@ function AppContent() {
     <BrowserRouter>
       <div className={clsx(
         "min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 transition-colors duration-200",
-        "pt-20 md:pt-16 pb-20 md:pb-8"
+        "pt-20 xl:pt-16 pb-20 xl:pb-8"
       )}>
         <MobileHeader theme={theme} setTheme={setTheme} />
         <DesktopHeader 
@@ -223,7 +242,7 @@ function AppContent() {
           latestData={latestData} formatThaiDate={formatThaiDate} 
         />
         
-        <main className="max-w-[1200px] mx-auto px-4 md:px-6 pt-6 animate-in fade-in duration-500">
+        <main className="max-w-[1240px] mx-auto px-4 xl:px-6 pt-6 animate-in fade-in duration-500">
           <Routes>
             <Route path="/" element={
               loading ? (
@@ -283,7 +302,7 @@ const formatThaiDate = (dateStr: string) => {
 
 const MobileHeader = ({ theme, setTheme }: any) => {
   return (
-    <header className="fixed top-0 left-0 right-0 z-50 bg-white/80 dark:bg-slate-950/80 backdrop-blur-xl border-b border-slate-200 dark:border-slate-800 md:hidden h-14 flex items-center justify-between px-4">
+    <header className="fixed top-0 left-0 right-0 z-50 bg-white/80 dark:bg-slate-950/80 backdrop-blur-xl border-b border-slate-200 dark:border-slate-800 xl:hidden h-14 flex items-center justify-between px-4">
       <div className="flex items-center gap-2">
          <div className="w-8 h-8 bg-emerald-600 rounded-lg flex items-center justify-center shadow-lg shadow-emerald-500/20">
            <TrendingUp className="w-5 h-5 text-white" />
@@ -446,7 +465,7 @@ const DesktopHeader = ({ theme, setTheme, latestData, formatThaiDate }: any) => 
   const { user, signInWithGoogle, logout, loading: authLoading } = useAuth();
   
   return (
-    <header className="fixed top-0 left-0 right-0 z-50 bg-white/80 dark:bg-slate-950/80 backdrop-blur-xl border-b border-slate-200 dark:border-slate-800 hidden md:block">
+    <header className="fixed top-0 left-0 right-0 z-50 bg-white/80 dark:bg-slate-950/80 backdrop-blur-xl border-b border-slate-200 dark:border-slate-800 hidden xl:block">
       <div className="max-w-[1200px] mx-auto px-6 h-16 flex justify-between items-center">
         <div className="flex items-center gap-8">
           <Link to="/" className="flex items-center gap-2.5 group">
@@ -488,7 +507,7 @@ const DesktopHeader = ({ theme, setTheme, latestData, formatThaiDate }: any) => 
         </div>
 
         <div className="flex items-center gap-4">
-          <div className="text-right mr-2">
+          <div className="text-right mr-2 hidden xl:block">
             <p className="text-[10px] text-slate-400 dark:text-slate-500 uppercase tracking-widest font-bold">อัปเดตข้อมูลประจำวัน</p>
             <p className="text-xs font-mono text-slate-600 dark:text-slate-300">
               {latestData ? formatThaiDate(latestData.date) : '...'}
@@ -504,7 +523,7 @@ const DesktopHeader = ({ theme, setTheme, latestData, formatThaiDate }: any) => 
             <div className="w-6 h-6 bg-white/20 rounded-full flex items-center justify-center">
               <Coffee className="w-3.5 h-3.5" />
             </div>
-            เลี้ยงกาแฟ
+            <span className="hidden sm:inline">เลี้ยงกาแฟ</span>
           </a>
 
           {authLoading ? (
@@ -538,7 +557,7 @@ const DesktopHeader = ({ theme, setTheme, latestData, formatThaiDate }: any) => 
     const { pathname } = useLocation();
     
     return (
-      <nav className="fixed bottom-6 left-4 right-4 z-[60] md:hidden">
+      <nav className="fixed bottom-6 left-4 right-4 z-[60] xl:hidden">
         <div className="bg-white/90 dark:bg-slate-900/90 backdrop-blur-3xl border border-slate-200/50 dark:border-white/10 shadow-2xl shadow-emerald-500/10 rounded-[2rem] px-2 py-2 flex justify-between items-center relative overflow-hidden">
           <Link to="/" className={clsx(
             "flex-1 flex flex-col items-center gap-1.5 py-3 transition-colors relative z-10",

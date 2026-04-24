@@ -71,7 +71,7 @@ export const FearAndGreedCard = () => {
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-2">
             <Gauge className="w-5 h-5 text-indigo-500" />
-            <h3 className="text-xs font-black text-slate-800 dark:text-slate-200 uppercase tracking-widest">Fear & Greed Index</h3>
+            <h3 className="text-xs font-black text-slate-800 dark:text-slate-200 uppercase tracking-widest leading-none">Fear & Greed Index</h3>
           </div>
           {lastUpdated && (
             <div className="flex items-center gap-1 text-[9px] text-slate-400 font-bold uppercase">
@@ -80,27 +80,38 @@ export const FearAndGreedCard = () => {
             </div>
           )}
         </div>
-        <div className="flex items-center gap-6">
-          <div className="relative w-20 h-20 flex items-center justify-center">
-            <svg className="w-full h-full -rotate-90">
-              <circle cx="40" cy="40" r="36" fill="none" stroke="currentColor" strokeWidth="8" className="text-slate-100 dark:text-slate-800" />
-              <circle 
-                cx="40" cy="40" r="36" fill="none" stroke="currentColor" strokeWidth="8" 
-                strokeDasharray={226.2} strokeDashoffset={226.2 - (226.2 * (score || 0)) / 100}
-                className={clsx("transition-all duration-1000", (sentiment as any).stroke || "stroke-indigo-500")}
+        <div className="flex flex-col items-center justify-center py-2">
+          <div className="relative w-40 h-20 flex items-center justify-center mb-4">
+            <svg viewBox="0 0 100 55" className="w-full h-full overflow-visible">
+              {/* Background Arc */}
+              <path 
+                d="M 10 50 A 40 40 0 0 1 90 50" 
+                fill="none" 
+                stroke="currentColor" 
+                strokeWidth="10" 
+                className="text-slate-100 dark:text-slate-800" 
                 strokeLinecap="round"
               />
+              {/* Progress Arc */}
+              <motion.path 
+                initial={{ strokeDashoffset: 125.66 }}
+                animate={{ strokeDashoffset: 125.66 - (125.66 * (score || 0)) / 100 }}
+                d="M 10 50 A 40 40 0 0 1 90 50" 
+                fill="none" 
+                stroke="currentColor" 
+                strokeWidth="10" 
+                strokeLinecap="round"
+                className={clsx("transition-all duration-1000", (sentiment as any).stroke || "stroke-indigo-500")}
+                strokeDasharray="125.66"
+              />
             </svg>
-            <span className="absolute text-xl font-black text-slate-800 dark:text-white leading-none">{score || '--'}</span>
-          </div>
-          <div>
-            <div className={clsx("text-[11px] font-black px-3 py-1 rounded-full w-fit mb-1.5 uppercase tracking-tight", sentiment.bg, sentiment.color)}>
-              {sentiment.text}
+            <div className="absolute inset-x-0 bottom-[-2px] flex flex-col items-center">
+              <span className="text-3xl font-black text-slate-800 dark:text-white leading-none tracking-tighter">{score || '--'}</span>
             </div>
-            <p className="text-[10px] text-slate-400 dark:text-slate-500 font-medium leading-relaxed">
-              {source || 'ดัชนีชี้วัดความกลัวและความโลภ'}<br/>
-              อ้างอิงข้อมูลจากตลาดหุ้นสหรัฐฯ
-            </p>
+          </div>
+          
+          <div className={clsx("text-xs font-black px-4 py-1.5 rounded-xl uppercase tracking-widest shadow-lg", sentiment.bg, sentiment.color)}>
+            {sentiment.text}
           </div>
         </div>
       </div>
