@@ -103,7 +103,7 @@ const FearAndGreedCard = () => {
 // ------------------------------------------
 
 // --- System Activity Card ---
-const ActivityCard = () => (
+const ActivityCard = ({ lastSync, latestData }: { lastSync: string | null, latestData: any }) => (
   <div className="bg-white dark:bg-slate-900 text-slate-800 dark:text-white border border-slate-200 dark:border-slate-800 rounded-[20px] p-5 flex flex-col justify-between shadow-[0_4px_6px_-1px_rgba(0,0,0,0.05)] h-[180px] w-full">
     <div className="flex items-center justify-between">
       <span className="text-xs text-slate-500 dark:text-slate-400 font-medium uppercase tracking-wider">สถานะระบบ</span>
@@ -111,13 +111,25 @@ const ActivityCard = () => (
     </div>
     <div className="flex items-center gap-2 mt-4 flex-1">
       <div className="w-2.5 h-2.5 bg-emerald-500 dark:bg-emerald-400 rounded-full animate-pulse shadow-[0_0_8px_rgba(16,185,129,0.8)] dark:shadow-[0_0_8px_rgba(52,211,153,0.8)]"></div>
-      <span className="text-sm font-medium">กำลังซิงค์ข้อมูล</span>
+      <span className="text-sm font-medium text-emerald-600 dark:text-emerald-400">ระบบทำงานปกติ (Hourly)</span>
     </div>
-    <p className="text-[11px] mt-2 text-slate-500 dark:text-slate-400 font-medium leading-relaxed">
-      การเชื่อมต่อ: ปกติ<br/>แหล่งข้อมูล: gpf.or.th (Thai2019)<br/>ตารางอัปเดต: ทุกวัน 12:00 น.
-    </p>
+    <div className="text-[11px] mt-2 text-slate-500 dark:text-slate-400 font-medium leading-relaxed">
+      <div className="flex justify-between border-b border-slate-100 dark:border-slate-800 pb-1 mb-1">
+        <span>แหล่งข้อมูล</span>
+        <span className="text-slate-700 dark:text-slate-300">gpf.or.th (API)</span>
+      </div>
+      <div className="flex justify-between border-b border-slate-100 dark:border-slate-800 pb-1 mb-1">
+        <span>สแกนล่าสุด</span>
+        <span className="text-indigo-600 dark:text-indigo-400">{lastSync ? format(parseISO(lastSync), 'dd/MM HH:mm') : 'รอดำเนินการ'}</span>
+      </div>
+      <div className="flex justify-between">
+        <span>ข้อมูล NAV ล่าสุด</span>
+        <span className="text-slate-700 dark:text-slate-300">{latestData ? latestData.displayDate : '...'}</span>
+      </div>
+    </div>
   </div>
 );
+// ------------------------------------------
 // ------------------------------------------
 
 // --- AI Insights Carousel Component ---
@@ -289,6 +301,7 @@ const AiInsightCarousel = ({ data, allFunds }: { data: any[], allFunds: string[]
 
 export default function App() {
   const [data, setData] = useState<any[]>([]);
+  const [lastSync, setLastSync] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [theme, setTheme] = useState<'light' | 'dark'>(() => {
     if (typeof localStorage !== 'undefined') {
@@ -331,6 +344,16 @@ export default function App() {
           } catch (connErr) {
             console.warn("Initial connection test failed (expected if 'test/connection' doc doesn't exist), proceeding to fetch real data.");
           }
+        }
+
+        // Fetch Metadata
+        try {
+          const syncDoc = await getDocFromServer(doc(db, 'metadata', 'sync_info'));
+          if (syncDoc.exists()) {
+            setLastSync(syncDoc.data().last_updated);
+          }
+        } catch (err) {
+          console.error("Metadata fetch error:", err);
         }
 
         const q = query(collection(db, 'nav_history'), orderBy('date', 'asc'));
@@ -403,8 +426,23 @@ export default function App() {
   }, [formattedData, timeFilter]);
 
   const chartDataWithMix = useMemo(() => {
-    if (!customMix || customMix.length === 0) return chartData;
-    return chartData.map(d => {
+    const baseData = chartData.map(d => {
+      // Calculate GPF Portfolio Average
+      let totalNav = 0;
+      let count = 0;
+      allFunds.forEach(fund => {
+        const val = Number(d[fund]);
+        if (!isNaN(val) && val > 0) {
+          totalNav += val;
+          count++;
+        }
+      });
+      const average = count > 0 ? totalNav / count : null;
+      return { ...d, "ภาพรวมพอร์ตลงทุน กบข.": average };
+    });
+
+    if (!customMix || customMix.length === 0) return baseData;
+    return baseData.map(d => {
       let mixValue = 0;
       customMix.forEach(m => {
         const rawValue = Number(d[m.fund]);
@@ -414,7 +452,7 @@ export default function App() {
       });
       return { ...d, "My Mix": mixValue };
     });
-  }, [chartData, customMix]);
+  }, [chartData, customMix, allFunds]);
 
   const CustomTooltip = ({ active, payload, label }: any) => {
     if (active && payload && payload.length) {
@@ -557,6 +595,23 @@ export default function App() {
                       content={<CustomTooltip />} 
                       cursor={{ stroke: theme === 'dark' ? '#334155' : '#CBD5E1', strokeWidth: 2 }} 
                     />
+                    
+                    <Line
+                      type="monotone"
+                      dataKey="ภาพรวมพอร์ตลงทุน กบข."
+                      name="ภาพรวมพอร์ตลงทุน กบข."
+                      stroke="#94A3B8"
+                      strokeWidth={2}
+                      strokeDasharray="5 5"
+                      dot={false}
+                      activeDot={{ 
+                        r: 4, 
+                        strokeWidth: 2, 
+                        stroke: theme === 'dark' ? '#0F172A' : '#FFFFFF',
+                        fill: "#94A3B8" 
+                      }}
+                    />
+
                     {selectedFunds.map((fund) => (
                       <Line
                         key={fund}
@@ -600,7 +655,7 @@ export default function App() {
             <div className="lg:col-span-1 order-4 lg:order-2 space-y-4">
               <AiInsightCarousel data={formattedData} allFunds={allFunds} />
               <FearAndGreedCard />
-              <ActivityCard />
+              <ActivityCard lastSync={lastSync} latestData={latestData} />
             </div>
 
             {/* --- 3. Performance Cards --- */}
