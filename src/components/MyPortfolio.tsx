@@ -282,8 +282,8 @@ export const MyPortfolio: React.FC<MyPortfolioProps> = ({ latestData, allFunds, 
              <Info className="w-5 h-5 text-red-600" />
           </div>
           <div>
-            <p className="text-xs font-bold text-red-800 dark:text-red-300">สัดส่วนกองทุนทองคำเกินเกณฑ์</p>
-            <p className="text-[10px] text-red-600 dark:text-red-400">ตามระเบียบ กบข. สมาชิกสามารถลงทุนในกองทุนทองคำได้ไม่เกิน 20% ของพอร์ต</p>
+            <p className="text-xs text-red-800 dark:text-red-300 font-bold">สัดส่วนกองทุนทองคำเกินเกณฑ์</p>
+            <p className="text-xs text-red-600 dark:text-red-400">ตามระเบียบ กบข. สมาชิกสามารถลงทุนในกองทุนทองคำได้ไม่เกิน 20% ของพอร์ต</p>
           </div>
         </motion.div>
       )}
@@ -293,12 +293,12 @@ export const MyPortfolio: React.FC<MyPortfolioProps> = ({ latestData, allFunds, 
         <div className="relative z-10">
           <div className="flex justify-between items-start mb-6">
             <div>
-              <p className="text-emerald-100/70 text-[11px] font-black uppercase tracking-[0.2em] mb-1">มูลค่าพอร์ตโดยประมาณ</p>
+              <p className="text-emerald-100/70 text-xs font-black uppercase tracking-[0.2em] mb-0.5">มูลค่าพอร์ตโดยประมาณ</p>
               <h2 className="text-3xl sm:text-4xl font-black tracking-tight flex items-baseline gap-1">
                 <span className="text-xl font-medium text-emerald-200">฿</span>
                 {latestData ? portfolioValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '---'}
               </h2>
-              {!latestData && <p className="text-[10px] text-emerald-200/60 mt-1 italic">กำลังโหลดข้อมูล NAV ล่าสุด...</p>}
+              {!latestData && <p className="text-xs text-emerald-200/60 mt-1 italic">กำลังโหลดข้อมูล NAV ล่าสุด...</p>}
             </div>
             <div className="bg-white/10 backdrop-blur-md p-2 rounded-2xl border border-white/10">
               <Wallet className="w-6 h-6 text-emerald-200" />
@@ -307,11 +307,11 @@ export const MyPortfolio: React.FC<MyPortfolioProps> = ({ latestData, allFunds, 
 
           <div className="grid grid-cols-2 gap-4 mt-6">
             <div className="bg-black/10 backdrop-blur-sm p-3 rounded-2xl border border-white/5">
-              <p className="text-[10px] text-emerald-200/60 font-black uppercase tracking-widest mb-1">ยอดออมรายเดือน (Auto-DCA)</p>
+              <p className="text-xs text-emerald-200/60 font-black uppercase tracking-widest mb-1">ยอดออมรายเดือน (Auto-DCA)</p>
               <p className="text-lg font-bold">฿{totalMonthlyInvestment.toLocaleString()}</p>
             </div>
             <div className="bg-black/10 backdrop-blur-sm p-3 rounded-2xl border border-white/5">
-              <p className="text-[10px] text-emerald-200/60 font-black uppercase tracking-widest mb-1">การเติบโตเดือนปัจจุบัน</p>
+              <p className="text-xs text-emerald-200/60 font-black uppercase tracking-widest mb-1">การเติบโตเดือนปัจจุบัน</p>
               <p className="text-lg font-bold text-emerald-300">+0.85%</p>
             </div>
           </div>
@@ -331,7 +331,7 @@ export const MyPortfolio: React.FC<MyPortfolioProps> = ({ latestData, allFunds, 
             </div>
             <div>
               <h3 className="font-black text-slate-800 dark:text-white text-lg">เงินเดือนและแผนการออม</h3>
-              <p className="text-[11px] text-slate-400 font-bold uppercase tracking-widest">Financial Settings</p>
+              <p className="text-xs text-slate-400 font-bold uppercase tracking-widest">ตั้งค่าแผนการเงิน</p>
             </div>
           </div>
           <button 
@@ -345,9 +345,9 @@ export const MyPortfolio: React.FC<MyPortfolioProps> = ({ latestData, allFunds, 
 
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           <div className="bg-slate-50 dark:bg-slate-800/50 p-6 rounded-3xl border border-slate-100 dark:border-slate-800 relative group">
-            <p className="text-[11px] text-slate-400 font-black uppercase tracking-wider mb-2">เงินเดือนปัจจุบัน</p>
+            <p className="text-xs text-slate-400 font-black uppercase tracking-wider mb-2">เงินเดือนปัจจุบัน</p>
             <div className="flex items-baseline gap-1">
-              <span className="text-[11px] font-bold text-slate-400">฿</span>
+              <span className="text-xs font-bold text-slate-400">฿</span>
               <p className="text-2xl font-black text-slate-800 dark:text-white leading-none">
                 {salarySettings.baseSalary.toLocaleString()}
               </p>
@@ -361,42 +361,42 @@ export const MyPortfolio: React.FC<MyPortfolioProps> = ({ latestData, allFunds, 
           </div>
 
           <div className="bg-emerald-50 dark:bg-emerald-900/20 p-6 rounded-3xl border border-emerald-100 dark:border-emerald-800/30">
-            <p className="text-[11px] text-emerald-600 dark:text-emerald-400 font-black uppercase tracking-wider mb-2">ออมสะสมของคุณ</p>
+            <p className="text-xs text-emerald-600 dark:text-emerald-400 font-black uppercase tracking-wider mb-2">ออมสะสมของคุณ</p>
             <div className="flex flex-col gap-1">
               <div className="flex items-baseline gap-1">
-                <span className="text-[11px] font-bold text-emerald-500">฿</span>
+                <span className="text-xs font-bold text-emerald-500">฿</span>
                 <p className="text-2xl font-black text-emerald-700 dark:text-emerald-300 leading-none">
                   {myMonthlyContribution.toLocaleString()}
                 </p>
               </div>
-              <p className="text-[11px] font-bold text-emerald-600/60 dark:text-emerald-400/60 uppercase">
+              <p className="text-xs font-bold text-emerald-600/60 dark:text-emerald-400/60 uppercase">
                 ออมเพิ่ม {salarySettings.voluntaryPercent}%
               </p>
             </div>
           </div>
 
           <div className="bg-blue-50 dark:bg-blue-900/20 p-6 rounded-3xl border border-blue-100 dark:border-blue-800/30">
-            <p className="text-[11px] text-blue-600 dark:text-blue-400 font-black uppercase tracking-wider mb-2">รัฐสมทบให้</p>
+            <p className="text-xs text-blue-600 dark:text-blue-400 font-black uppercase tracking-wider mb-2">รัฐสมทบให้</p>
             <div className="flex flex-col gap-1">
               <div className="flex items-baseline gap-1">
-                <span className="text-[11px] font-bold text-blue-500">฿</span>
+                <span className="text-xs font-bold text-blue-500">฿</span>
                 <p className="text-2xl font-black text-blue-700 dark:text-blue-300 leading-none">
                   {stateMonthlyContribution.toLocaleString()}
                 </p>
               </div>
-              <p className="text-[11px] font-bold text-blue-600/60 dark:text-blue-400/60 uppercase">รัฐสมทบคงที่ 3%</p>
+              <p className="text-xs font-bold text-blue-600/60 dark:text-blue-400/60 uppercase">รัฐสมทบคงที่ 3%</p>
             </div>
           </div>
 
           <div className="bg-indigo-50 dark:bg-indigo-900/20 p-6 rounded-3xl border border-indigo-100 dark:border-indigo-800/30">
-            <p className="text-[11px] text-indigo-600 dark:text-indigo-400 font-black uppercase tracking-wider mb-2">เงินออมรวม/เดือน</p>
+            <p className="text-xs text-indigo-600 dark:text-indigo-400 font-black uppercase tracking-wider mb-2">เงินออมรวม/เดือน</p>
             <div className="flex items-baseline gap-1">
-              <span className="text-[11px] font-bold text-indigo-500">฿</span>
+              <span className="text-xs font-bold text-indigo-500">฿</span>
               <p className="text-2xl font-black text-indigo-700 dark:text-indigo-300 leading-none">
                 {totalMonthlyInvestment.toLocaleString()}
               </p>
             </div>
-            <p className="text-[11px] font-bold text-indigo-600/60 dark:text-indigo-400/60 uppercase mt-1">รวมออม {salarySettings.voluntaryPercent + 3}% ต่อเดือน</p>
+            <p className="text-xs font-bold text-indigo-600/60 dark:text-indigo-400/60 uppercase mt-1">รวมออม {salarySettings.voluntaryPercent + 3}% ต่อเดือน</p>
           </div>
         </div>
       </section>
@@ -410,7 +410,7 @@ export const MyPortfolio: React.FC<MyPortfolioProps> = ({ latestData, allFunds, 
               สัดส่วนจริง (Actual)
             </h3>
           </div>
-          <p className="text-[11px] text-slate-400 font-medium mb-6">กระจายตามประเภทแผนการลงทุน</p>
+          <p className="text-xs text-slate-400 font-medium mb-6">กระจายตามประเภทแผนการลงทุน</p>
           
           <div className="relative">
             {chartData.length > 0 ? (
@@ -471,7 +471,7 @@ export const MyPortfolio: React.FC<MyPortfolioProps> = ({ latestData, allFunds, 
               สัดส่วนเป้าหมาย (Plan)
             </h3>
           </div>
-          <p className="text-[11px] text-slate-400 font-medium mb-6">แบ่งตามการตั้งค่าแผนการลงทุนที่เลือก</p>
+          <p className="text-xs text-slate-400 font-medium mb-6">แบ่งตามการตั้งค่าแผนการลงทุนที่เลือก</p>
           
           <div className="relative">
             {targetChartData.length > 0 ? (
@@ -559,11 +559,11 @@ export const MyPortfolio: React.FC<MyPortfolioProps> = ({ latestData, allFunds, 
                             className="w-24 bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded px-2 py-0.5 text-xs font-bold outline-none"
                             autoFocus
                           />
-                          <button onClick={saveEdit} className="text-[10px] font-black text-emerald-600 uppercase">Save</button>
-                          <button onClick={() => setEditingItem(null)} className="text-[10px] font-black text-slate-400 uppercase">Cancel</button>
+                          <button onClick={saveEdit} className="text-xs font-black text-emerald-600 uppercase">Save</button>
+                          <button onClick={() => setEditingItem(null)} className="text-xs font-black text-slate-400 uppercase">Cancel</button>
                         </div>
                       ) : (
-                        <p className="text-[10px] text-slate-500 font-medium">
+                        <p className="text-xs text-slate-500 font-medium">
                           {item.units.toLocaleString(undefined, { minimumFractionDigits: 4 })} units × {nav.toFixed(4)}
                         </p>
                       )}
@@ -743,13 +743,13 @@ export const MyPortfolio: React.FC<MyPortfolioProps> = ({ latestData, allFunds, 
                         onClick={() => setSalarySettings({...salarySettings, paymentCycle: 'monthly'})}
                         className={clsx("flex-1 py-2 rounded-lg text-[10px] font-black uppercase transition-all", salarySettings.paymentCycle === 'monthly' ? "bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-sm" : "text-slate-400")}
                       >
-                        1 ครั้ง (รายเดือน)
+                        1 ครั้ง/เดือน
                       </button>
                       <button 
                         onClick={() => setSalarySettings({...salarySettings, paymentCycle: 'biweekly'})}
                         className={clsx("flex-1 py-2 rounded-lg text-[10px] font-black uppercase transition-all", salarySettings.paymentCycle === 'biweekly' ? "bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-sm" : "text-slate-400")}
                       >
-                        2 ครั้ง (รายปักษ์)
+                        2 ครั้ง/เดือน
                       </button>
                     </div>
                   </div>

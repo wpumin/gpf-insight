@@ -62,29 +62,30 @@ export const MarketOverview: React.FC<MarketOverviewProps> = ({
           <ResponsiveContainer width="100%" height="100%">
             <LineChart data={chartDataWithMix} margin={{ top: 10, right: 5, left: 0, bottom: 0 }}>
               <CartesianGrid 
-                strokeDasharray="3 3"
+                strokeDasharray="0" 
                 vertical={true}
                 horizontal={true}
-                stroke={theme === 'dark' ? '#334155' : '#E2E8F0'} 
-                strokeOpacity={0.6}
+                stroke={theme === 'dark' ? '#1e293b' : '#f1f5f9'} 
+                strokeOpacity={1}
               />
               <XAxis 
                 dataKey="displayDate" 
-                tick={{ fill: theme === 'dark' ? '#64748B' : '#94A3B8', fontSize: 11, fontWeight: 500 }} 
+                tick={{ fill: theme === 'dark' ? '#64748B' : '#94A3B8', fontSize: 10, fontWeight: 600 }} 
                 tickMargin={12}
                 axisLine={false}
                 tickLine={false}
-                minTickGap={50}
+                minTickGap={60}
+                interval="preserveStartEnd"
               />
               <YAxis 
                 domain={['auto', 'auto']} 
-                tick={{ fill: theme === 'dark' ? '#64748B' : '#94A3B8', fontSize: 11, fontWeight: 500 }}
+                tick={{ fill: theme === 'dark' ? '#64748B' : '#94A3B8', fontSize: 10, fontWeight: 600 }}
                 tickMargin={8}
                 axisLine={false}
                 tickLine={false}
                 tickFormatter={(val) => val.toFixed(2)}
-                width={45}
-                tickCount={6}
+                width={50}
+                tickCount={8}
               />
               <Tooltip 
                 content={<CustomTooltip />} 

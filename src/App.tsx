@@ -12,7 +12,9 @@ import {
   Settings,
   ChevronDown,
   Compass,
-  Calendar
+  Calendar,
+  Sun,
+  Moon
 } from 'lucide-react';
 import { 
   LineChart, 
@@ -299,9 +301,9 @@ const ProfileMenu = ({ user, logout }: any) => {
         className="flex items-center gap-2 p-1 pl-3 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl hover:bg-slate-100 dark:hover:bg-slate-800 transition-all active:scale-95"
       >
         <div className="flex flex-col items-end pr-1">
-          <span className="text-[10px] font-black text-slate-400 leading-none mb-0.5 uppercase">Settings</span>
+          <span className="text-[10px] font-black text-slate-400 leading-none mb-0.5 uppercase">ตั้งค่า</span>
           <span className="text-[11px] font-black text-slate-800 dark:text-white leading-none truncate max-w-[80px]">
-            {user.displayName?.split(' ')[0] || 'Member'}
+            {user.displayName?.split(' ')[0] || 'สมาชิก'}
           </span>
         </div>
         {user.photoURL ? (
@@ -362,14 +364,14 @@ const ProfilePage = ({ user, logout, signInWithGoogle }: any) => {
           <UserIcon className="w-10 h-10 text-slate-400" />
         </div>
         <div>
-          <h2 className="text-2xl font-black text-slate-800 dark:text-white">Profile & Account</h2>
-          <p className="text-slate-500 max-w-xs mx-auto mt-2">Sign in to save your portfolio and preferences across all your devices.</p>
+          <h2 className="text-2xl font-black text-slate-800 dark:text-white">โปรไฟล์และบัญชี</h2>
+          <p className="text-slate-500 max-w-xs mx-auto mt-2">เข้าสู่ระบบเพื่อบันทึกข้อมูลพอร์ตของคุณให้ปลอดภัยและเข้าถึงได้จากทุกอุปกรณ์</p>
         </div>
         <button 
           onClick={signInWithGoogle}
           className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-4 px-8 rounded-2xl shadow-lg shadow-emerald-500/20 active:scale-95 transition-all text-sm"
         >
-          Sign in with Google
+          เข้าสู่ระบบด้วย Google
         </button>
       </div>
     );
@@ -398,26 +400,6 @@ const ProfilePage = ({ user, logout, signInWithGoogle }: any) => {
         </div>
 
         <div className="mt-10 space-y-3">
-          <button className="w-full flex items-center justify-between p-4 bg-slate-50 dark:bg-slate-800/50 rounded-2xl border border-slate-100 dark:border-slate-800 hover:bg-slate-100 transition-all group">
-             <div className="flex items-center gap-3">
-               <div className="w-10 h-10 rounded-xl bg-blue-50 dark:bg-blue-900/30 flex items-center justify-center">
-                  <UserIcon className="w-5 h-5 text-blue-500" />
-               </div>
-               <span className="text-sm font-bold text-slate-700 dark:text-slate-200">Account Details</span>
-             </div>
-             <ChevronDown className="w-4 h-4 text-slate-300 -rotate-90 group-hover:translate-x-1 transition-transform" />
-          </button>
-          
-          <button className="w-full flex items-center justify-between p-4 bg-slate-50 dark:bg-slate-800/50 rounded-2xl border border-slate-100 dark:border-slate-800 hover:bg-slate-100 transition-all group">
-             <div className="flex items-center gap-3">
-               <div className="w-10 h-10 rounded-xl bg-purple-50 dark:bg-purple-900/30 flex items-center justify-center">
-                  <Settings className="w-5 h-5 text-purple-500" />
-               </div>
-               <span className="text-sm font-bold text-slate-700 dark:text-slate-200">App Preferences</span>
-             </div>
-             <ChevronDown className="w-4 h-4 text-slate-300 -rotate-90 group-hover:translate-x-1 transition-transform" />
-          </button>
-
           <button 
             onClick={logout}
             className="w-full flex items-center justify-center gap-3 p-5 mt-6 bg-red-50 dark:bg-red-500/10 rounded-2xl border border-red-100 dark:border-red-500/20 text-red-600 font-black text-sm hover:bg-red-100 transition-all active:scale-95"
@@ -458,7 +440,7 @@ const DesktopHeader = ({ theme, setTheme, latestData, formatThaiDate }: any) => 
                 pathname === '/' ? "bg-emerald-50 text-emerald-600 dark:bg-emerald-500/10 dark:text-emerald-400" : "text-slate-500 hover:text-slate-800 dark:hover:text-slate-200"
               )}
             >
-              ตลาดความรู้
+              หน้าหลัก
             </Link>
             <Link 
               to="/portfolio" 
@@ -512,7 +494,7 @@ const DesktopHeader = ({ theme, setTheme, latestData, formatThaiDate }: any) => 
               onClick={signInWithGoogle}
               className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold px-5 py-2.5 rounded-xl transition-all shadow-lg shadow-emerald-500/20 active:scale-95"
             >
-              Sign In
+              เข้าสู่ระบบ
             </button>
           )}
 
@@ -520,7 +502,7 @@ const DesktopHeader = ({ theme, setTheme, latestData, formatThaiDate }: any) => 
             onClick={() => setTheme(theme === 'light' ? 'dark' : 'light')}
             className="w-10 h-10 flex items-center justify-center rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 transition-colors"
           >
-            {theme === 'light' ? <Activity className="w-4 h-4" /> : <Sparkles className="w-4 h-4" />}
+            {theme === 'light' ? <Moon className="w-4 h-4" /> : <Sun className="w-4 h-4" />}
           </button>
         </div>
       </div>
@@ -544,7 +526,7 @@ const DesktopHeader = ({ theme, setTheme, latestData, formatThaiDate }: any) => 
             )}>
               <Activity className="w-6 h-6" />
             </div>
-            <span className="text-[10px] font-black uppercase tracking-tight">Market</span>
+            <span className="text-[10px] font-black uppercase tracking-tight">หน้าหลัก</span>
             {pathname === '/' && <motion.div layoutId="nav-dot" className="absolute -bottom-1 w-1 h-1 bg-emerald-500 rounded-full" />}
           </Link>
 
@@ -558,7 +540,7 @@ const DesktopHeader = ({ theme, setTheme, latestData, formatThaiDate }: any) => 
             )}>
               <Wallet className="w-6 h-6" />
             </div>
-            <span className="text-[10px] font-black uppercase tracking-tight">Portfolio</span>
+            <span className="text-[10px] font-black uppercase tracking-tight">พอร์ต</span>
             {pathname === '/portfolio' && <motion.div layoutId="nav-dot" className="absolute -bottom-1 w-1 h-1 bg-emerald-500 rounded-full" />}
           </Link>
 
@@ -572,7 +554,7 @@ const DesktopHeader = ({ theme, setTheme, latestData, formatThaiDate }: any) => 
             )}>
               <Sparkles className="w-6 h-6" />
             </div>
-            <span className="text-[10px] font-black uppercase tracking-tight">Tools</span>
+            <span className="text-[10px] font-black uppercase tracking-tight">เครื่องมือ</span>
             {pathname === '/calculator' && <motion.div layoutId="nav-dot" className="absolute -bottom-1 w-1 h-1 bg-emerald-500 rounded-full" />}
           </Link>
 
@@ -586,7 +568,7 @@ const DesktopHeader = ({ theme, setTheme, latestData, formatThaiDate }: any) => 
             )}>
               <UserIcon className="w-6 h-6" />
             </div>
-            <span className="text-[10px] font-black uppercase tracking-tight">Profile</span>
+            <span className="text-[10px] font-black uppercase tracking-tight">โปรไฟล์</span>
             {pathname === '/profile' && <motion.div layoutId="nav-dot" className="absolute -bottom-1 w-1 h-1 bg-emerald-500 rounded-full" />}
           </Link>
         </div>
