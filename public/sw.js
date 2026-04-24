@@ -1,21 +1,17 @@
-const CACHE_NAME = 'gpf-insight-cache-v2';
+const CACHE_NAME = 'gpf-insight-cache-v3';
 
 self.addEventListener('install', (event) => {
-  self.skipWaiting(); // บังคับให้ Service Worker ตัวใหม่ทำงานทันที
-  event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => {
-      return cache.addAll(['/']);
-    })
-  );
+  self.skipWaiting(); // บังคับอัปเดต Service Worker ใหม่ทันที
 });
 
 self.addEventListener('activate', (event) => {
+  // เวลา Activate ให้ไล่ลบแคชเก่าๆ (v1, v2) ทิ้งให้หมดเกลี้ยง
   event.waitUntil(
     caches.keys().then((cacheNames) => {
       return Promise.all(
         cacheNames.map((cacheName) => {
           if (cacheName !== CACHE_NAME) {
-            return caches.delete(cacheName); // ล้างแคชตัวเก่าทิ้ง
+            return caches.delete(cacheName);
           }
         })
       );
@@ -24,20 +20,35 @@ self.addEventListener('activate', (event) => {
 });
 
 self.addEventListener('fetch', (event) => {
-  // สำคัญมาก: ปล่อยผ่าน Request ที่ไม่ใช่ GET (เช่น POST ของ Firebase) ไม่ให้พัง
+  // กรอง Request ที่ไม่ใช่ GET ออกไปก่อน ให้วิ่งสายตรงเท่านั้น
   if (event.request.method !== 'GET') return;
 
   const url = new URL(event.request.url);
-  // ปล่อยผ่าน API และ Firebase ทั้งหมด ไม่ต้องเอาลง Cache
+  
+  // ปล่อยผ่าน API ภายนอกทั้งหมด ห้ามเอาลง Cache ป้องกันปัญหาจุกจิก
   if (url.hostname.includes('googleapis.com') || 
-      url.hostname.includes('cnn.io') ||
-      url.hostname.includes('firebase')) {
+      url.hostname.includes('firebase') ||
+      url.hostname.includes('fonts.')) {
     return;
   }
 
+  // ใช้ยุทธวิธี Network-First (ดึงจากเน็ตก่อนเสมอ เพื่อเอาไฟล์ js ก้อนล่าสุด)
+  // ถ้าเน็ตล่มค่อยกลับไปงัดเอาของเก่าจาก Cache (Offline mode fallback)
   event.respondWith(
-    caches.match(event.request).then((response) => {
-      return response || fetch(event.request);
-    }).catch(() => fetch(event.request))
+    fetch(event.request)
+      .then((networkResponse) => {
+        // ดึงสำเร็จ เอาไปจดลงแคชไว้เพื่อเตรียมความพร้อมสำหรับตอนเน็ตล่ม
+        if (networkResponse && networkResponse.status === 200 && networkResponse.type === 'basic') {
+          const responseToCache = networkResponse.clone();
+          caches.open(CACHE_NAME).then((cache) => {
+            cache.put(event.request, responseToCache);
+          });
+        }
+        return networkResponse;
+      })
+      .catch(() => {
+        // เน็ตพัง หรือหาไฟล์ไม่เจอ ให้พยายามดึงจากแคชแก้ขัด
+        return caches.match(event.request);
+      })
   );
 });

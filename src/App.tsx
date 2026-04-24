@@ -1,20 +1,41 @@
-/**
- * @license
- * SPDX-License-Identifier: Apache-2.0
- */
-
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import {
-  LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer
+import { 
+  TrendingUp, 
+  TrendingDown, 
+  Activity, 
+  Wallet, 
+  Coffee, 
+  Sparkles, 
+  Loader2,
+  User as UserIcon,
+  LogOut,
+  Settings,
+  ChevronDown,
+  Compass,
+  Calendar
+} from 'lucide-react';
+import { 
+  LineChart, 
+  Line, 
+  XAxis, 
+  YAxis, 
+  CartesianGrid, 
+  Tooltip, 
+  ResponsiveContainer 
 } from 'recharts';
-import { Loader2, TrendingUp, TrendingDown, Sparkles, ArrowRight, Shield, ChevronLeft, ChevronRight, Activity, Gauge, Coffee, RefreshCcw } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import clsx from 'clsx';
 import { format, parseISO, subYears } from 'date-fns';
-import { doc, getDocFromServer, collection, getDocs, query, orderBy } from 'firebase/firestore';
+import { th } from 'date-fns/locale';
+import { BrowserRouter, Routes, Route, Link, useLocation } from 'react-router-dom';
+import { doc, onSnapshot, collection, query, orderBy } from 'firebase/firestore';
 import { db } from './firebase';
+
+// Components
 import { DynamicHoldSimulator } from './components/DynamicHoldSimulator';
 import { CustomMixBuilder, AlertMessenger } from './components/InvestmentTools';
+import { MyPortfolio } from './components/MyPortfolio';
+import { MarketOverview } from './components/MarketOverview';
 
 const FUNDS_MAP: Record<string, string> = {
   UNIT_COST1: "แผนลงทุนพื้นฐานทั่วไป",
@@ -34,282 +55,29 @@ const FUNDS_MAP: Record<string, string> = {
   UNIT_COST16: "แผนการลงทุนตามหลักชะรีอะฮ์"
 };
 
-const COLORS = [
-  '#10B981', '#3B82F6', '#8B5CF6', '#F59E0B', '#EF4444', 
-  '#06B6D4', '#EC4899', '#14B8A6', '#F97316', '#6366F1', 
-  '#EAB308', '#84CC16', '#0EA5E9', '#D946EF', '#10B981'
-];
+import { CardShimmer } from './components/Shimmer';
 
-// --- CNN Fear & Greed Component ---
-const FearAndGreedCard = () => {
-  const [fgData, setFgData] = useState<any>(null);
-
-  useEffect(() => {
-    fetch('https://production.dataviz.cnn.io/index/fearandgreed/graphdata')
-      .then(res => res.json())
-      .then(resData => {
-         if (resData?.fear_and_greed) setFgData(resData.fear_and_greed);
-      })
-      .catch(err => console.error("F&G Error", err));
-  }, []);
-
-  if (!fgData) return (
-     <div className="bg-white dark:bg-slate-900 rounded-[20px] shadow-[0_4px_6px_-1px_rgba(0,0,0,0.05)] border border-slate-200 dark:border-slate-800 p-5 flex flex-col h-[180px] animate-pulse"></div>
-  );
-
-  const score = Math.round(fgData.score);
-  const rating = fgData.rating; 
-  
-  let colorClass = "text-yellow-500";
-  if (score < 25) { colorClass = "text-red-500"; }
-  else if (score < 45) { colorClass = "text-orange-500"; }
-  else if (score > 75) { colorClass = "text-emerald-500"; }
-  else if (score > 55) { colorClass = "text-emerald-400"; }
-
-  const ratingThai: Record<string, string> = {
-    'extreme_fear': 'กลัวอย่างรุนแรง',
-    'fear': 'ความกลัว',
-    'neutral': 'สมดุล',
-    'greed': 'ความโลภ',
-    'extreme_greed': 'โลภอย่างรุนแรง'
-  };
-
-  return (
-    <div className="bg-white dark:bg-slate-900 rounded-[20px] shadow-[0_4px_6px_-1px_rgba(0,0,0,0.05)] border border-slate-200 dark:border-slate-800 p-5 flex flex-col h-[180px] group">
-       <div className="flex justify-between items-center mb-2">
-          <div className="flex items-center gap-1.5">
-             <Gauge className="w-4 h-4 text-indigo-500" />
-             <span className="text-[11px] font-bold text-slate-800 dark:text-slate-200 uppercase tracking-widest">อารมณ์ตลาดโลก</span>
-          </div>
-       </div>
-       <div className="flex-1 flex flex-col items-center justify-center pt-2">
-          <div className="relative w-32 h-16 overflow-hidden flex items-end justify-center mb-1">
-             {/* Background Arc */}
-             <div className="absolute top-2 w-[110px] h-[110px] rounded-full border-[10px] border-slate-100 dark:border-slate-800 box-border"></div>
-             {/* Colored Arc */}
-             <div 
-               className={clsx("absolute top-2 w-[110px] h-[110px] rounded-full border-[10px] border-transparent border-t-current border-l-current box-border transition-all duration-1000 ease-out z-10", colorClass)}
-               style={{ transform: `rotate(${-45 + (score/100)*180}deg)` }}
-             ></div>
-             <div className="text-3xl font-black text-slate-800 dark:text-white z-20 leading-none">{score}</div>
-          </div>
-          <div className={clsx("text-xs font-black uppercase tracking-wider", colorClass)}>
-            {ratingThai[rating.toLowerCase()] || rating.replace('_', ' ')}
-          </div>
-       </div>
-    </div>
-  );
-};
-// ------------------------------------------
-
-// --- System Activity Card ---
-const ActivityCard = ({ lastSync, latestData }: { lastSync: string | null, latestData: any }) => (
-  <div className="bg-white dark:bg-slate-900 text-slate-800 dark:text-white border border-slate-200 dark:border-slate-800 rounded-[20px] p-5 flex flex-col justify-between shadow-[0_4px_6px_-1px_rgba(0,0,0,0.05)] h-[180px] w-full">
-    <div className="flex items-center justify-between">
-      <span className="text-xs text-slate-500 dark:text-slate-400 font-medium uppercase tracking-wider">สถานะระบบ</span>
-      <Activity className="w-4 h-4 text-emerald-500 dark:text-emerald-400 opacity-80" />
-    </div>
-    <div className="flex items-center gap-2 mt-4 flex-1">
-      <div className="w-2.5 h-2.5 bg-emerald-500 dark:bg-emerald-400 rounded-full animate-pulse shadow-[0_0_8px_rgba(16,185,129,0.8)] dark:shadow-[0_0_8px_rgba(52,211,153,0.8)]"></div>
-      <span className="text-sm font-medium text-emerald-600 dark:text-emerald-400">ระบบทำงานปกติ (Hourly)</span>
-    </div>
-    <div className="text-[11px] mt-2 text-slate-500 dark:text-slate-400 font-medium leading-relaxed">
-      <div className="flex justify-between border-b border-slate-100 dark:border-slate-800 pb-1 mb-1">
-        <span>แหล่งข้อมูล</span>
-        <span className="text-slate-700 dark:text-slate-300">gpf.or.th (API)</span>
-      </div>
-      <div className="flex justify-between border-b border-slate-100 dark:border-slate-800 pb-1 mb-1">
-        <span>สแกนล่าสุด</span>
-        <span className="text-indigo-600 dark:text-indigo-400">{lastSync ? format(parseISO(lastSync), 'dd/MM HH:mm') : 'รอดำเนินการ'}</span>
-      </div>
-      <div className="flex justify-between">
-        <span>ข้อมูล NAV ล่าสุด</span>
-        <span className="text-slate-700 dark:text-slate-300">{latestData ? latestData.displayDate : '...'}</span>
-      </div>
-    </div>
-  </div>
-);
-// ------------------------------------------
-// ------------------------------------------
-
-// --- AI Insights Carousel Component ---
-const AiInsightCarousel = ({ data, allFunds }: { data: any[], allFunds: string[] }) => {
-  const [currentSlide, setCurrentSlide] = useState(0);
-  const touchStartX = useRef<number | null>(null);
-  const touchEndX = useRef<number | null>(null);
-
-  const handleTouchStart = (e: React.TouchEvent) => {
-    touchStartX.current = e.targetTouches[0].clientX;
-    touchEndX.current = null;
-  };
-
-  const handleTouchMove = (e: React.TouchEvent) => {
-    touchEndX.current = e.targetTouches[0].clientX;
-  };
-
-  const handleTouchEnd = () => {
-    if (!touchStartX.current || !touchEndX.current) return;
-    const distance = touchStartX.current - touchEndX.current;
-    
-    // swipe left (next)
-    if (distance > 50) {
-      setCurrentSlide((prev) => (prev + 1) % insights.length);
-    } 
-    // swipe right (prev)
-    else if (distance < -50) {
-      setCurrentSlide((prev) => (prev - 1 + insights.length) % insights.length);
-    }
-  };
-
-  const insights = useMemo(() => {
-    if (!data || data.length < 2) return [];
-
-    const latest = data[data.length - 1];
-    const oldData = data.length > 21 ? data[data.length - 22] : data[0]; 
-
-    const perfs = allFunds.map(fund => {
-      const l = Number(latest[fund]);
-      const o = Number(oldData[fund]);
-      if (!isNaN(l) && !isNaN(o) && o !== 0) {
-        return { fund, diff: ((l - o) / o) * 100 };
-      }
-      return null;
-    }).filter(p => p !== null).sort((a,b) => b!.diff - a!.diff) as {fund: string, diff: number}[];
-
-    if (perfs.length === 0) return [];
-
-    const best = perfs[0];
-    const worst = perfs[perfs.length - 1];
-    const defensive = perfs.find(p => p.fund.includes('ตราสารหนี้') || p.fund.includes('ตลาดเงิน')) || perfs[perfs.length / 2 | 0];
-
-    // Global News & Macro Context mapping based on Real Data
-    const safestFund = perfs.find(p => p.fund.includes('ตราสารหนี้') || p.fund.includes('ตลาดเงิน')) || perfs[perfs.length-1];
-    const riskAssetText = perfs[0]?.diff > 1 ? "สินทรัพย์เสี่ยง (Risk Assets) ทั่วโลกเริ่มฟื้นตัวจากตัวเลขเงินเฟ้อที่ชะลอตัว" : "นักลงทุนทั่วโลกเริ่มมีความกังวลต่อเสถียรภาพเศรษฐกิจข้ามชาติ";
-
-    return [
-      {
-        id: 1,
-        title: "สรุปข่าวเด่น: ความเคลื่อนไหวตลาดโลก 🌍",
-        icon: <TrendingUp className="w-5 h-5 text-emerald-500" />,
-        text: (
-          <span>
-            <strong className="text-emerald-500">{best.fund}</strong> ทะยานขึ้น <strong className="text-emerald-500">{(best.diff >= 0 ? '+' : '')}{best.diff.toFixed(2)}%</strong> {riskAssetText} ซึ่งเป็นปัจจัยบวกโดยตรงต่อกองทุนชุดนี้
-          </span>
-        )
-      },
-      {
-        id: 2,
-        title: "มุมมองมหภาคและกลยุทธ์สับเปลี่ยน ⚖️",
-        icon: <ArrowRight className="w-5 h-5 text-amber-500" />,
-        text: (
-          <span>
-            ในขณะที่ <strong className="text-slate-700 dark:text-slate-300">{worst.fund}</strong> ยังพักตัว แนะนำให้ลองพิจารณา <strong className="text-amber-500">"สับเปลี่ยนแผน"</strong> เพื่อกระจายไปสู่สินทรัพย์ที่มีแนวโน้มฟื้นตัวเร็วกว่าตามรอบเศรษฐกิจโลก
-          </span>
-        )
-      },
-      {
-        id: 3,
-        title: "ทิศทางสินทรัพย์ปลอดภัย 🛡️",
-        icon: <Shield className="w-5 h-5 text-blue-500" />,
-        text: (
-          <span>
-            ความผันผวนของค่าเงินส่งผลให้ <strong className="text-blue-500">{safestFund.fund}</strong> ยังคงรักษาเสถียรภาพได้ดี เหมาะเป็นจุดพักเงินของพอร์ตในช่วงที่รอข่าวการประชุมนโยบายการเงินครั้งใหญ่
-          </span>
-        )
-      },
-      {
-        id: 4,
-        title: "ภาพรวมเศรษฐกิจรายวัน 📊",
-        icon: <Sparkles className="w-5 h-5 text-indigo-500" />,
-        text: (
-          <span>
-            ภาพรวมการลงทุนวันนี้มีทิศทาง {best.diff > 0.05 ? 'เป็นบวกชัดเจน' : 'ค่อนข้างทรงตัว'} แนะนำจับตาดูราคา NAV ของวันพรุ่งนี้ เพื่อยืนยันแนวโน้มการเปลี่ยนเทรนด์ในระยะกลาง
-          </span>
-        )
-      }
-    ];
-  }, [data, allFunds]);
-
-  useEffect(() => {
-    if (insights.length === 0) return;
-    const timer = setInterval(() => {
-      setCurrentSlide((prev) => (prev + 1) % insights.length);
-    }, 7000); // Auto-slide every 7s
-    return () => clearInterval(timer);
-  }, [insights]);
-
-  if (insights.length === 0) return null;
-
-  const current = insights[currentSlide];
-
-  return (
-    <div className="bg-white dark:bg-slate-900 rounded-[20px] shadow-[0_4px_6px_-1px_rgba(0,0,0,0.05)] border border-slate-200 dark:border-slate-800 p-5 flex flex-col relative overflow-hidden min-h-[200px] group">
-      <div className="flex justify-between items-start mb-3 gap-2">
-        <div className="flex items-center gap-1.5 shrink-0">
-          <Sparkles className="w-4 h-4 text-emerald-500" fill="currentColor" />
-          <span className="text-[11px] font-bold text-slate-800 dark:text-slate-200 uppercase tracking-widest whitespace-nowrap">AI วิเคราะห์ตลาด</span>
-        </div>
-        <span className="text-[10px] text-slate-500 bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded-full font-medium text-right leading-tight border border-slate-200 dark:border-slate-700/50">
-          อัปเดตทุกวัน
-        </span>
-      </div>
-      
-      <div 
-        className="relative flex-1 cursor-pointer w-full mb-6" 
-        onClick={() => setCurrentSlide((prev) => (prev + 1) % insights.length)}
-        onTouchStart={handleTouchStart}
-        onTouchMove={handleTouchMove}
-        onTouchEnd={handleTouchEnd}
-      >
-        <AnimatePresence mode="wait">
-          <motion.div
-            key={currentSlide}
-            initial={{ opacity: 0, x: 15 }}
-            animate={{ opacity: 1, x: 0 }}
-            exit={{ opacity: 0, x: -15 }}
-            transition={{ duration: 0.3, ease: 'easeInOut' }}
-            className="absolute inset-0 flex flex-col justify-start"
-          >
-             <h4 className="text-[13.5px] font-bold text-slate-800 dark:text-white mb-1.5 flex items-center gap-2">
-               {current.title}
-             </h4>
-             <p className="text-[12.5px] leading-[1.65] text-slate-600 dark:text-slate-300 font-medium line-clamp-4">
-               {current.text}
-             </p>
-          </motion.div>
-        </AnimatePresence>
-      </div>
-
-      {/* Slide Indicators */}
-      <div className="flex items-center gap-1.5 absolute bottom-4 left-0 right-0 justify-center">
-        {insights.map((_, idx) => (
-          <button 
-            key={idx} 
-            onClick={(e) => { e.stopPropagation(); setCurrentSlide(idx); }}
-            className={clsx(
-              "h-1.5 rounded-full transition-all duration-300",
-              currentSlide === idx ? "w-5 bg-emerald-500" : "w-1.5 bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600"
-            )}
-            aria-label={`Go to slide ${idx + 1}`}
-          />
-        ))}
-      </div>
-    </div>
-  );
-};
-// ------------------------------------------
+import { AuthProvider, useAuth } from './contexts/AuthContext';
 
 export default function App() {
+  return (
+    <AuthProvider>
+      <AppContent />
+    </AuthProvider>
+  );
+}
+
+function AppContent() {
+  const { user, loading: authLoading, signInWithGoogle, logout } = useAuth();
   const [data, setData] = useState<any[]>([]);
   const [lastSync, setLastSync] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+
   const [theme, setTheme] = useState<'light' | 'dark'>(() => {
     if (typeof localStorage !== 'undefined') {
       const saved = localStorage.getItem('theme');
       if (saved === 'light' || saved === 'dark') return saved;
     }
-    // Default to light mode explicitly if not set, instead of strictly enforcing OS level
-    // to cater to users who prefer light web apps despite dark OS themes.
     return 'light';
   });
   const [timeFilter, setTimeFilter] = useState<'1Y' | '3Y' | 'MAX'>('MAX');
@@ -323,122 +91,91 @@ export default function App() {
     if (typeof localStorage !== 'undefined') {
       localStorage.setItem('theme', theme);
     }
-    
-    // Update PWA Status bar color to match the theme background
-    let metaThemeColor = document.querySelector('meta[name="theme-color"]');
-    if (!metaThemeColor) {
-      metaThemeColor = document.createElement('meta');
-      metaThemeColor.setAttribute('name', 'theme-color');
-      document.head.appendChild(metaThemeColor);
-    }
-    metaThemeColor.setAttribute('content', theme === 'dark' ? '#020617' : '#F8FAFC');
   }, [theme]);
 
   useEffect(() => {
-    const fetchFromFirebase = async (isInitial = false) => {
-      try {
-        if (isInitial) {
-          // Connection test first as recommended
-          try {
-            await getDocFromServer(doc(db, 'test', 'connection'));
-          } catch (connErr) {
-            console.warn("Initial connection test failed (expected if 'test/connection' doc doesn't exist), proceeding to fetch real data.");
-          }
-        }
+    // Real-time Synchronizers
+    const unsubMetadata = onSnapshot(doc(db, 'metadata', 'sync_info'), (snapshot) => {
+      if (snapshot.exists()) setLastSync(snapshot.data().last_updated);
+    });
 
-        // Fetch Metadata
-        try {
-          const syncDoc = await getDocFromServer(doc(db, 'metadata', 'sync_info'));
-          if (syncDoc.exists()) {
-            setLastSync(syncDoc.data().last_updated);
-          }
-        } catch (err) {
-          console.error("Metadata fetch error:", err);
-        }
+    const q = query(collection(db, 'nav_history'), orderBy('date', 'asc'));
+    const unsubNav = onSnapshot(q, (snapshot) => {
+      const fetchedData: any[] = [];
+      snapshot.forEach(doc => fetchedData.push(doc.data()));
+      setData(prev => JSON.stringify(prev) !== JSON.stringify(fetchedData) ? fetchedData : prev);
+      setLoading(false);
+    });
 
-        const q = query(collection(db, 'nav_history'), orderBy('date', 'asc'));
-        const querySnapshot = await getDocs(q);
-        const fetchedData: any[] = [];
-        querySnapshot.forEach((doc) => {
-          fetchedData.push(doc.data());
-        });
-        
-        setData(prevData => {
-          const isDifferent = JSON.stringify(prevData) !== JSON.stringify(fetchedData);
-          return isDifferent ? fetchedData : prevData;
-        });
-        
-        if (isInitial) setLoading(false);
-      } catch(e) {
-        console.error("Firestore sync error:", e);
-        if (isInitial) setLoading(false);
+    const clearSplash = () => {
+      const splash = document.getElementById('pwa-splash');
+      if (splash) {
+        splash.classList.add('fade-out');
+        setTimeout(() => splash.remove(), 600);
       }
     };
 
-    const startTime = Date.now();
-    fetchFromFirebase(true).finally(() => {
-      // Handle Splash Screen Removal
-      const elapsed = Date.now() - startTime;
-      const minSplashTime = 1200; // Force splash to show for at least 1.2s for native feel
-      const delay = Math.max(0, minSplashTime - elapsed);
-      
-      setTimeout(() => {
-        const splash = document.getElementById('pwa-splash');
-        if (splash) {
-          splash.classList.add('fade-out');
-          setTimeout(() => splash.remove(), 600); // Wait for CSS transition
-        }
-      }, delay);
-    });
+    // Safety timeout: Clear splash after 5 seconds regardless of data
+    const safetyTimer = setTimeout(clearSplash, 5000);
 
-    // Refresh data silently every 5 minutes
-    const intervalIdx = setInterval(() => {
-      fetchFromFirebase(false);
-    }, 5 * 60 * 1000);
+    const checkDataLoad = setInterval(() => {
+      if (data.length > 0) {
+         setLoading(false);
+         clearInterval(checkDataLoad);
+         clearTimeout(safetyTimer);
+         setTimeout(clearSplash, 800);
+      }
+    }, 100);
 
-    return () => clearInterval(intervalIdx);
-  }, []);
+    return () => {
+      unsubMetadata();
+      unsubNav();
+      clearInterval(checkDataLoad);
+      clearTimeout(safetyTimer);
+    };
+  }, [data.length]);
 
   const toggleFund = (fund: string) => {
-    setSelectedFunds(prev => 
-      prev.includes(fund) ? prev.filter(f => f !== fund) : [...prev, fund]
-    );
+    setSelectedFunds(prev => prev.includes(fund) ? prev.filter(f => f !== fund) : [...prev, fund]);
   };
 
-  const formattedData = useMemo(() => {
-    return data.map(item => ({
-      ...item,
-      displayDate: format(parseISO(item.date), 'MMM dd, yyyy')
-    }));
-  }, [data]);
-
+  const formattedData = useMemo(() => data.map(item => {
+    const newItem: any = { ...item, displayDate: formatThaiDate(item.date) };
+    
+    // Ensure both UNIT_COSTx and human names are correctly handled
+    Object.entries(FUNDS_MAP).forEach(([key, name]) => {
+      // If the data has the raw key (UNIT_COSTx), map it to the human name
+      if (item[key] !== undefined && item[key] !== null) {
+        newItem[name] = Number(item[key]);
+      }
+      // If the data ALREADY has the human name (mapped by scraper), use it
+      if (item[name] !== undefined && item[name] !== null) {
+        newItem[name] = Number(item[name]);
+      }
+    });
+    
+    return newItem;
+  }), [data]);
   const latestData = formattedData[formattedData.length - 1];
   const previousData = formattedData[formattedData.length - 2];
 
   const chartData = useMemo(() => {
     if (!formattedData.length) return [];
     if (timeFilter === 'MAX') return formattedData;
-    
     const latestDate = parseISO(formattedData[formattedData.length - 1].date);
     const cutoffDate = subYears(latestDate, timeFilter === '1Y' ? 1 : 3);
-    
     return formattedData.filter(d => parseISO(d.date) >= cutoffDate);
   }, [formattedData, timeFilter]);
 
   const chartDataWithMix = useMemo(() => {
     const baseData = chartData.map(d => {
-      // Calculate GPF Portfolio Average
-      let totalNav = 0;
-      let count = 0;
+      let totalNav = 0, count = 0;
       allFunds.forEach(fund => {
         const val = Number(d[fund]);
-        if (!isNaN(val) && val > 0) {
-          totalNav += val;
-          count++;
-        }
+        if (!isNaN(val) && val > 0) { totalNav += val; count++; }
       });
-      const average = count > 0 ? totalNav / count : null;
-      return { ...d, "ภาพรวมพอร์ตลงทุน กบข.": average };
+      const avg = count > 0 ? totalNav / count : null;
+      return { ...d, "ภาพรวมพอร์ตลงทุน กบข.": avg };
     });
 
     if (!customMix || customMix.length === 0) return baseData;
@@ -446,9 +183,7 @@ export default function App() {
       let mixValue = 0;
       customMix.forEach(m => {
         const rawValue = Number(d[m.fund]);
-        if (!isNaN(rawValue)) {
-          mixValue += (rawValue * m.percentage) / 100;
-        }
+        if (!isNaN(rawValue)) mixValue += (rawValue * m.percentage) / 100;
       });
       return { ...d, "My Mix": mixValue };
     });
@@ -475,315 +210,386 @@ export default function App() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 dark:bg-slate-950 font-['Helvetica_Neue',Arial,sans-serif] text-slate-900 dark:text-slate-100 transition-colors duration-200 p-4 sm:p-6 md:p-8">
-      <div className="max-w-[1200px] mx-auto grid grid-cols-1 lg:grid-cols-4 gap-4 auto-rows-max">
+    <BrowserRouter>
+      <div className={clsx(
+        "min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 transition-colors duration-200",
+        "md:pt-16 pb-20 md:pb-8"
+      )}>
+        <DesktopHeader 
+          theme={theme} setTheme={setTheme} 
+          latestData={latestData} formatThaiDate={formatThaiDate} 
+        />
+        
+        <main className="max-w-[1200px] mx-auto px-4 md:px-6 pt-6 animate-in fade-in duration-500">
+          <Routes>
+            <Route path="/" element={
+              loading ? (
+                <div className="space-y-6">
+                  <CardShimmer />
+                  <CardShimmer />
+                </div>
+              ) : (
+                <MarketOverview 
+                  chartDataWithMix={chartDataWithMix} selectedFunds={selectedFunds} allFunds={allFunds}
+                  latestData={latestData} previousData={previousData} theme={theme}
+                  timeFilter={timeFilter} setTimeFilter={setTimeFilter} toggleFund={toggleFund}
+                  customMix={customMix} formattedData={formattedData} lastSync={lastSync}
+                  COLORS={COLORS} CustomTooltip={CustomTooltip}
+                />
+              )
+            } />
+            <Route path="/portfolio" element={
+              <MyPortfolio latestData={latestData} allFunds={allFunds} theme={theme} />
+            } />
+            <Route path="/calculator" element={
+              <div className="space-y-6 pb-20">
+                 <AlertMessenger data={formattedData} allFunds={allFunds} />
+                 <CustomMixBuilder allFunds={allFunds} onMixChange={setCustomMix} />
+                 <DynamicHoldSimulator data={formattedData} allFunds={allFunds} customMix={customMix} />
+              </div>
+            } />
+            <Route path="/profile" element={
+              <ProfilePage user={user} logout={logout} signInWithGoogle={signInWithGoogle} />
+            } />
+          </Routes>
+        </main>
 
-        <header className="lg:col-span-4 flex justify-between items-center px-1 mb-2 gap-2">
-          <div className="flex items-center gap-2.5 sm:gap-3 shrink-0">
-            <div className="w-8 h-8 sm:w-10 sm:h-10 bg-emerald-600 rounded-xl flex items-center justify-center shadow-sm shrink-0">
-              <TrendingUp className="w-5 h-5 sm:w-6 sm:h-6 text-white" />
-            </div>
-            <h1 className="text-[17px] sm:text-2xl font-bold text-slate-800 dark:text-white leading-none whitespace-nowrap tracking-tight">GPF Insight</h1>
+        <MobileBottomNav />
+      </div>
+    </BrowserRouter>
+  );
+}
+
+const COLORS = [
+  '#10b981', '#6366f1', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', 
+  '#06b6d4', '#f97316', '#a855f7', '#14b8a6', '#fbbf24', '#f43f5e'
+];
+
+const formatThaiDate = (dateStr: string) => {
+  try {
+    if (!dateStr) return '...';
+    const date = parseISO(dateStr);
+    const day = format(date, 'd');
+    const month = format(date, 'MMM', { locale: th });
+    const year = parseInt(format(date, 'yyyy')) + 543;
+    return `${day} ${month} ${year}`;
+  } catch {
+    return dateStr;
+  }
+};
+
+const ProfileMenu = ({ user, logout }: any) => {
+  const [isOpen, setIsOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
+        setIsOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  return (
+    <div className="relative" ref={menuRef}>
+      <button 
+        onClick={() => setIsOpen(!isOpen)}
+        className="flex items-center gap-2 p-1 pl-3 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl hover:bg-slate-100 dark:hover:bg-slate-800 transition-all active:scale-95"
+      >
+        <div className="flex flex-col items-end pr-1">
+          <span className="text-[10px] font-black text-slate-400 leading-none mb-0.5 uppercase">Settings</span>
+          <span className="text-[11px] font-black text-slate-800 dark:text-white leading-none truncate max-w-[80px]">
+            {user.displayName?.split(' ')[0] || 'Member'}
+          </span>
+        </div>
+        {user.photoURL ? (
+          <img src={user.photoURL} alt="p" className="w-8 h-8 rounded-xl border border-white dark:border-slate-700 shadow-sm" />
+        ) : (
+          <div className="w-8 h-8 rounded-xl bg-emerald-600 flex items-center justify-center text-white">
+            <UserIcon className="w-4 h-4" />
           </div>
-          <div className="flex items-center gap-2 sm:gap-4 shrink-0">
-            <div className="text-right hidden md:block">
-              <p className="text-xs text-slate-400 dark:text-slate-500 uppercase tracking-wider font-semibold">อัปเดตล่าสุด</p>
-              <p className="text-sm font-mono text-slate-600 dark:text-slate-300">
-                {latestData ? latestData.displayDate : 'กำลังโหลด...'}
-              </p>
+        )}
+        <ChevronDown className={clsx("w-4 h-4 text-slate-400 transition-transform duration-300", isOpen && "rotate-180")} />
+      </button>
+
+      <AnimatePresence>
+        {isOpen && (
+          <motion.div
+            initial={{ opacity: 0, y: 10, scale: 0.95 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 10, scale: 0.95 }}
+            className="absolute right-0 mt-2 w-56 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-[2rem] shadow-2xl overflow-hidden p-2"
+          >
+            <div className="px-4 py-3 border-b border-slate-100 dark:border-slate-800 mb-1">
+              <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Account</p>
+              <p className="text-xs font-bold text-slate-800 dark:text-white truncate">{user.email}</p>
             </div>
             
-            <a 
-              href="https://tmn.app.link/dQ0mj5UIx2b" 
-              target="_blank" 
-              rel="noopener noreferrer"
-              className="flex items-center gap-1.5 sm:gap-2 text-[10px] sm:text-xs font-bold text-orange-600 bg-orange-100 hover:bg-orange-200 dark:bg-orange-500/20 dark:text-orange-400 dark:hover:bg-orange-500/30 px-2 py-1.5 sm:px-3 sm:py-2 rounded-lg transition-colors border border-orange-200 dark:border-orange-500/30 whitespace-nowrap shadow-sm"
+            <button className="w-full flex items-center gap-3 px-4 py-3 text-xs font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 rounded-2xl transition-all">
+              <UserIcon className="w-4 h-4" />
+              <span>Personal Info</span>
+            </button>
+            <button className="w-full flex items-center gap-3 px-4 py-3 text-xs font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 rounded-2xl transition-all">
+              <Settings className="w-4 h-4" />
+              <span>Preferences</span>
+            </button>
+            
+            <div className="h-px bg-slate-100 dark:bg-slate-800 my-1 mx-2" />
+            
+            <button 
+              onClick={() => {
+                setIsOpen(false);
+                logout();
+              }}
+              className="w-full flex items-center gap-3 px-4 py-3 text-xs font-bold text-red-600 hover:bg-red-50 dark:hover:bg-red-500/10 rounded-2xl transition-all"
             >
-              <Coffee className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-              เลี้ยงกาแฟ
-            </a>
-
-            <div className="flex bg-slate-200 dark:bg-slate-800 p-0.5 sm:p-1 rounded-lg">
-              <button
-                onClick={() => setTheme('light')}
-                className={clsx(
-                  "px-2 sm:px-3 py-1 rounded-md text-[10px] sm:text-xs font-medium transition-all",
-                  theme === 'light' ? "bg-white text-slate-800 shadow-sm" : "text-slate-500 hover:text-slate-700 dark:hover:text-slate-300"
-                )}
-              >
-                สว่าง
-              </button>
-              <button
-                onClick={() => setTheme('dark')}
-                className={clsx(
-                  "px-2 sm:px-3 py-1 rounded-md text-[10px] sm:text-xs font-medium transition-all",
-                  theme === 'dark' ? "bg-slate-700 text-white shadow-sm" : "text-slate-500 hover:text-slate-700 dark:hover:text-slate-300"
-                )}
-              >
-                มืด
-              </button>
-            </div>
-          </div>
-        </header>
-
-        {loading ? (
-          <div className="lg:col-span-4 h-64 flex items-center justify-center">
-            <Loader2 className="w-8 h-8 animate-spin text-emerald-500" />
-          </div>
-        ) : data.length === 0 ? (
-          <div className="lg:col-span-4 text-center py-20 bg-white dark:bg-slate-900 rounded-[20px] border border-slate-200 dark:border-slate-800 shadow-sm">
-            <p className="text-slate-500 dark:text-slate-400 font-medium">ไม่พบข้อมูลในขณะนี้ ระบบกำลังรอการซิงค์ข้อมูลจากเซิร์ฟเวอร์...</p>
-          </div>
-        ) : (
-          <>
-            {/* --- 1. Interactive Chart Section (Top Priority) --- */}
-            <div className="lg:col-span-3 order-1 lg:order-1 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-[20px] p-5 shadow-[0_4px_6px_-1px_rgba(0,0,0,0.05)] hover:border-indigo-500 dark:hover:border-indigo-500 transition-colors duration-200 flex flex-col min-h-[400px]">
-              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-4">
-                <div>
-                  <h2 className="text-lg font-bold text-slate-800 dark:text-white">กราฟแสดงผลตอบแทนย้อนหลัง</h2>
-                  <p className="text-xs text-slate-500 dark:text-slate-400 font-medium mt-1">ติดตามมูลค่า NAV รายวันของแผนที่เลือก</p>
-                </div>
-                
-                <div className="flex items-center gap-3">
-                   <div className="flex bg-slate-100 dark:bg-slate-800 p-1 rounded-lg">
-                    {(['1Y', '3Y', 'MAX'] as const).map(tf => (
-                      <button
-                        key={tf}
-                        onClick={() => setTimeFilter(tf)}
-                        className={clsx(
-                          "px-3 py-1 rounded-md text-xs font-bold transition-all",
-                          timeFilter === tf 
-                            ? "bg-white dark:bg-slate-700 text-emerald-600 dark:text-emerald-400 shadow-sm" 
-                            : "text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-300"
-                        )}
-                      >
-                        {tf}
-                      </button>
-                    ))}
-                   </div>
-                </div>
-              </div>
-              <div className="flex-grow w-full mt-4">
-                <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={chartDataWithMix} margin={{ top: 10, right: 5, left: 0, bottom: 0 }}>
-                    <CartesianGrid 
-                      strokeDasharray="3 3"
-                      vertical={true}
-                      horizontal={true}
-                      stroke={theme === 'dark' ? '#334155' : '#E2E8F0'} 
-                      strokeOpacity={0.6}
-                    />
-                    <XAxis 
-                      dataKey="displayDate" 
-                      tick={{ fill: theme === 'dark' ? '#64748B' : '#94A3B8', fontSize: 11, fontWeight: 500 }} 
-                      tickMargin={12}
-                      axisLine={false}
-                      tickLine={false}
-                      minTickGap={50}
-                    />
-                    <YAxis 
-                      domain={['auto', 'auto']} 
-                      tick={{ fill: theme === 'dark' ? '#64748B' : '#94A3B8', fontSize: 11, fontWeight: 500 }}
-                      tickMargin={8}
-                      axisLine={false}
-                      tickLine={false}
-                      tickFormatter={(val) => val.toFixed(2)}
-                      width={45}
-                      tickCount={6}
-                    />
-                    <Tooltip 
-                      content={<CustomTooltip />} 
-                      cursor={{ stroke: theme === 'dark' ? '#334155' : '#CBD5E1', strokeWidth: 2 }} 
-                    />
-                    
-                    <Line
-                      type="monotone"
-                      dataKey="ภาพรวมพอร์ตลงทุน กบข."
-                      name="ภาพรวมพอร์ตลงทุน กบข."
-                      stroke="#94A3B8"
-                      strokeWidth={2}
-                      strokeDasharray="5 5"
-                      dot={false}
-                      activeDot={{ 
-                        r: 4, 
-                        strokeWidth: 2, 
-                        stroke: theme === 'dark' ? '#0F172A' : '#FFFFFF',
-                        fill: "#94A3B8" 
-                      }}
-                    />
-
-                    {selectedFunds.map((fund) => (
-                      <Line
-                        key={fund}
-                        type="monotone"
-                        dataKey={fund}
-                        name={fund}
-                        stroke={COLORS[allFunds.indexOf(fund) % COLORS.length]}
-                        strokeWidth={3}
-                        dot={false}
-                        activeDot={{ 
-                          r: 6, 
-                          strokeWidth: 3, 
-                          stroke: theme === 'dark' ? '#0F172A' : '#FFFFFF',
-                          fill: COLORS[allFunds.indexOf(fund) % COLORS.length] 
-                        }}
-                      />
-                    ))}
-                    {customMix.length > 0 && (
-                      <Line
-                        type="monotone"
-                        dataKey="My Mix"
-                        name="My Custom Mix"
-                        stroke="#6366f1"
-                        strokeWidth={4}
-                        strokeDasharray="8 4"
-                        dot={false}
-                        activeDot={{ 
-                          r: 7, 
-                          strokeWidth: 2, 
-                          stroke: theme === 'dark' ? '#0F172A' : '#FFFFFF',
-                          fill: "#6366f1" 
-                        }}
-                      />
-                    )}
-                  </LineChart>
-                </ResponsiveContainer>
-              </div>
-            </div>
-
-            {/* --- 2. Sidebar Data: AI Insights & System Status (Keep adjacent to chart on desktop, moved down on mobile) --- */}
-            <div className="lg:col-span-1 order-4 lg:order-2 space-y-4">
-              <AiInsightCarousel data={formattedData} allFunds={allFunds} />
-              <FearAndGreedCard />
-              <ActivityCard lastSync={lastSync} latestData={latestData} />
-            </div>
-
-            {/* --- 3. Performance Cards --- */}
-            <div className="lg:col-span-4 order-2 lg:order-3">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-4 px-1 gap-2">
-                <h3 className="text-base font-bold text-slate-800 dark:text-slate-200 tracking-tight flex items-center gap-2">
-                  เปรียบเทียบผลการดำเนินงาน 1 วันล่าสุด
-                </h3>
-                <div className="flex items-center gap-2 text-xs font-semibold px-3 py-1 bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 rounded-full w-fit border border-blue-100 dark:border-blue-800/50">
-                  <span>เลือกไว้ {selectedFunds.length} แผน</span>
-                  <span className="opacity-50">|</span>
-                  <span>แสดงสูงสุด 4 การ์ด</span>
-                </div>
-              </div>
-              
-              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
-                <AnimatePresence mode="popLayout">
-                  {selectedFunds.slice(0, 4).map((fund) => {
-                    const currentVal = latestData ? latestData[fund] : null;
-                    const prevVal = previousData ? previousData[fund] : null;
-                    const diff = currentVal && prevVal && prevVal !== 0 ? ((currentVal - prevVal) / prevVal) * 100 : 0;
-                    const isUp = diff >= 0;
-
-                    return (
-                      <motion.div 
-                        key={fund}
-                        layout
-                        initial={{ opacity: 0, scale: 0.8, y: 20 }}
-                        animate={{ opacity: 1, scale: 1, y: 0 }}
-                        exit={{ opacity: 0, scale: 0.8, y: -20 }}
-                        transition={{ duration: 0.3, type: "spring", bounce: 0.4 }}
-                        className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-[20px] p-5 shadow-[0_4px_6px_-1px_rgba(0,0,0,0.05)] hover:border-blue-500 dark:hover:border-blue-500 transition-colors duration-200 flex flex-col justify-between"
-                      >
-                        <span className="text-[13px] text-slate-500 dark:text-slate-400 font-medium leading-tight h-8 line-clamp-2">
-                          {fund}
-                        </span>
-                        <div className="mt-4">
-                          <div className="text-2xl font-bold text-slate-900 dark:text-white">
-                            {currentVal ? currentVal.toFixed(4) : '--'}
-                          </div>
-                          {currentVal && prevVal && (
-                            <div className={clsx("text-xs font-semibold mt-1 flex items-center gap-1", isUp ? "text-emerald-500" : "text-red-500")}>
-                              {isUp ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
-                              {isUp ? "+" : ""}{diff.toFixed(2)}%
-                            </div>
-                          )}
-                        </div>
-                      </motion.div>
-                    );
-                  })}
-
-                  {selectedFunds.length === 0 && (
-                    <motion.div 
-                      key="empty-state"
-                      layout
-                      initial={{ opacity: 0, scale: 0.95 }}
-                      animate={{ opacity: 1, scale: 1 }}
-                      exit={{ opacity: 0, scale: 0.95 }}
-                      transition={{ duration: 0.2 }}
-                      className="col-span-1 sm:col-span-2 md:col-span-4 p-8 border-2 border-dashed border-slate-200 dark:border-slate-800 rounded-[20px] text-center"
-                    >
-                      <p className="text-sm font-medium text-slate-500 dark:text-slate-400">ยังไม่ได้เลือกแผนการลงทุนสำหรับเปรียบเทียบในมุมมองการ์ด</p>
-                    </motion.div>
-                  )}
-                </AnimatePresence>
-              </div>
-            </div>
-
-            {/* --- 4. Fund Filter Section --- */}
-            <div className="lg:col-span-4 order-3 lg:order-4 bg-white dark:bg-slate-900 rounded-[20px] shadow-[0_4px_6px_-1px_rgba(0,0,0,0.05)] border border-slate-200 dark:border-slate-800 p-4 sm:p-5 mt-0 transition-colors duration-200">
-              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4 gap-2">
-                <div className="flex items-center gap-2">
-                  <h3 className="text-sm font-bold text-slate-800 dark:text-slate-200 uppercase tracking-wider">Filter กองทุน</h3>
-                  <div className="hidden sm:flex bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 text-[10px] font-bold px-2 py-0.5 rounded-full items-center">
-                    <Activity className="w-3 h-3 mr-1" /> แตะเพื่ออัปเดตกราฟ
-                  </div>
-                </div>
-                <span className="text-xs font-medium text-slate-500 bg-slate-100 dark:bg-slate-800 px-3 py-1 rounded-full border border-slate-200 dark:border-slate-700/50">เลือกไว้ {selectedFunds.length} แผน</span>
-              </div>
-              
-              <div className="flex flex-col sm:grid sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
-                {allFunds.map((fund) => {
-                  const isSelected = selectedFunds.includes(fund);
-                  const color = COLORS[allFunds.indexOf(fund) % COLORS.length];
-                  return (
-                    <motion.button
-                      key={fund}
-                      whileTap={{ scale: 0.95 }}
-                      onClick={() => toggleFund(fund)}
-                      className={clsx(
-                        "flex w-full items-center gap-3 p-3 text-left rounded-xl border transition-all duration-200 group h-full",
-                        isSelected 
-                          ? "bg-slate-50 dark:bg-slate-800/50 border-emerald-500/30 dark:border-emerald-500/30 shadow-sm" 
-                          : "bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 hover:border-emerald-300 dark:hover:border-emerald-700"
-                      )}
-                    >
-                      <div 
-                        className={clsx(
-                          "w-3.5 h-3.5 mt-0.5 sm:mt-0 rounded-full flex-shrink-0 transition-transform duration-200",
-                          isSelected ? "scale-110" : "group-hover:scale-110"
-                        )}
-                        style={{ backgroundColor: isSelected ? color : 'transparent', border: `2px solid ${isSelected ? color : '#CBD5E1'}` }}
-                      />
-                      <span className={clsx(
-                        "text-[12px] sm:text-[13px] font-medium leading-snug",
-                        isSelected ? "text-slate-900 dark:text-slate-100 font-bold" : "text-slate-600 dark:text-slate-400"
-                      )}>
-                        {fund}
-                      </span>
-                    </motion.button>
-                  );
-                })}
-              </div>
-            </div>
-
-            {/* --- 5. AI Strategy & Interactive Tools --- */}
-            <div className="lg:col-span-4 order-5 space-y-6">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <DynamicHoldSimulator data={formattedData} allFunds={allFunds} customMix={customMix} />
-                <CustomMixBuilder allFunds={allFunds} onMixChange={setCustomMix} />
-              </div>
-              
-              {/* Market Strategy Alerts at the very bottom */}
-              <AlertMessenger data={formattedData} allFunds={allFunds} />
-            </div>
-          </>
+              <LogOut className="w-4 h-4" />
+              <span>Log out</span>
+            </button>
+          </motion.div>
         )}
+      </AnimatePresence>
+    </div>
+  );
+};
+const ProfilePage = ({ user, logout, signInWithGoogle }: any) => {
+  if (!user) {
+    return (
+      <div className="flex flex-col items-center justify-center py-20 text-center space-y-6">
+        <div className="w-20 h-20 bg-slate-100 dark:bg-slate-900 rounded-3xl flex items-center justify-center">
+          <UserIcon className="w-10 h-10 text-slate-400" />
+        </div>
+        <div>
+          <h2 className="text-2xl font-black text-slate-800 dark:text-white">Profile & Account</h2>
+          <p className="text-slate-500 max-w-xs mx-auto mt-2">Sign in to save your portfolio and preferences across all your devices.</p>
+        </div>
+        <button 
+          onClick={signInWithGoogle}
+          className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-4 px-8 rounded-2xl shadow-lg shadow-emerald-500/20 active:scale-95 transition-all text-sm"
+        >
+          Sign in with Google
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="max-w-md mx-auto space-y-6 pb-20">
+      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-[32px] p-8 shadow-sm">
+        <div className="flex flex-col items-center text-center space-y-4">
+          <div className="relative">
+             {user.photoURL ? (
+               <img src={user.photoURL} alt="p" className="w-24 h-24 rounded-3xl border-4 border-emerald-500/20 shadow-xl" />
+             ) : (
+               <div className="w-24 h-24 rounded-3xl bg-emerald-600 flex items-center justify-center text-white shadow-xl">
+                 <UserIcon className="w-10 h-10" />
+               </div>
+             )}
+             <div className="absolute -bottom-2 -right-2 w-8 h-8 bg-emerald-500 rounded-full border-4 border-white dark:border-slate-900 flex items-center justify-center">
+                <Sparkles className="w-3 h-3 text-white" />
+             </div>
+          </div>
+          <div>
+            <h2 className="text-xl font-black text-slate-800 dark:text-white">{user.displayName}</h2>
+            <p className="text-sm font-bold text-slate-400">{user.email}</p>
+          </div>
+        </div>
+
+        <div className="mt-10 space-y-3">
+          <button className="w-full flex items-center justify-between p-4 bg-slate-50 dark:bg-slate-800/50 rounded-2xl border border-slate-100 dark:border-slate-800 hover:bg-slate-100 transition-all group">
+             <div className="flex items-center gap-3">
+               <div className="w-10 h-10 rounded-xl bg-blue-50 dark:bg-blue-900/30 flex items-center justify-center">
+                  <UserIcon className="w-5 h-5 text-blue-500" />
+               </div>
+               <span className="text-sm font-bold text-slate-700 dark:text-slate-200">Account Details</span>
+             </div>
+             <ChevronDown className="w-4 h-4 text-slate-300 -rotate-90 group-hover:translate-x-1 transition-transform" />
+          </button>
+          
+          <button className="w-full flex items-center justify-between p-4 bg-slate-50 dark:bg-slate-800/50 rounded-2xl border border-slate-100 dark:border-slate-800 hover:bg-slate-100 transition-all group">
+             <div className="flex items-center gap-3">
+               <div className="w-10 h-10 rounded-xl bg-purple-50 dark:bg-purple-900/30 flex items-center justify-center">
+                  <Settings className="w-5 h-5 text-purple-500" />
+               </div>
+               <span className="text-sm font-bold text-slate-700 dark:text-slate-200">App Preferences</span>
+             </div>
+             <ChevronDown className="w-4 h-4 text-slate-300 -rotate-90 group-hover:translate-x-1 transition-transform" />
+          </button>
+
+          <button 
+            onClick={logout}
+            className="w-full flex items-center justify-center gap-3 p-5 mt-6 bg-red-50 dark:bg-red-500/10 rounded-2xl border border-red-100 dark:border-red-500/20 text-red-600 font-black text-sm hover:bg-red-100 transition-all active:scale-95"
+          >
+             <LogOut className="w-5 h-5" />
+             ออกจากระบบ
+          </button>
+        </div>
+      </div>
+
+      <div className="bg-gradient-to-br from-slate-800 to-slate-950 p-6 rounded-[32px] text-white">
+         <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-2">Member Since</p>
+         <p className="text-sm font-bold">{new Date().toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: 'numeric' })}</p>
       </div>
     </div>
   );
-}
+};
+const DesktopHeader = ({ theme, setTheme, latestData, formatThaiDate }: any) => {
+  const { pathname } = useLocation();
+  const { user, signInWithGoogle, logout, loading: authLoading } = useAuth();
+  
+  return (
+    <header className="fixed top-0 left-0 right-0 z-50 bg-white/80 dark:bg-slate-950/80 backdrop-blur-xl border-b border-slate-200 dark:border-slate-800 hidden md:block">
+      <div className="max-w-[1200px] mx-auto px-6 h-16 flex justify-between items-center">
+        <div className="flex items-center gap-8">
+          <Link to="/" className="flex items-center gap-2.5 group">
+            <div className="w-8 h-8 bg-emerald-600 rounded-lg flex items-center justify-center shadow-lg shadow-emerald-500/20 group-hover:scale-105 transition-transform">
+              <TrendingUp className="w-5 h-5 text-white" />
+            </div>
+            <h1 className="text-xl font-black text-slate-800 dark:text-white tracking-tight">GPF Insight</h1>
+          </Link>
+          
+          <nav className="flex items-center gap-1">
+            <Link 
+              to="/" 
+              className={clsx(
+                "px-4 py-2 rounded-xl text-sm font-bold transition-all",
+                pathname === '/' ? "bg-emerald-50 text-emerald-600 dark:bg-emerald-500/10 dark:text-emerald-400" : "text-slate-500 hover:text-slate-800 dark:hover:text-slate-200"
+              )}
+            >
+              ตลาดความรู้
+            </Link>
+            <Link 
+              to="/portfolio" 
+              className={clsx(
+                "px-4 py-2 rounded-xl text-sm font-bold transition-all",
+                pathname === '/portfolio' ? "bg-emerald-50 text-emerald-600 dark:bg-emerald-500/10 dark:text-emerald-400" : "text-slate-500 hover:text-slate-800 dark:hover:text-slate-200"
+              )}
+            >
+              พอร์ตของฉัน
+            </Link>
+            <Link 
+              to="/calculator" 
+              className={clsx(
+                "px-4 py-2 rounded-xl text-sm font-bold transition-all",
+                pathname === '/calculator' ? "bg-emerald-50 text-emerald-600 dark:bg-emerald-500/10 dark:text-emerald-400" : "text-slate-500 hover:text-slate-800 dark:hover:text-slate-200"
+              )}
+            >
+              เครื่องมือลงทุน
+            </Link>
+          </nav>
+        </div>
+
+        <div className="flex items-center gap-4">
+          <div className="text-right mr-2">
+            <p className="text-[10px] text-slate-400 dark:text-slate-500 uppercase tracking-widest font-bold">อัปเดตข้อมูลประจำวัน</p>
+            <p className="text-xs font-mono text-slate-600 dark:text-slate-300">
+              {latestData ? formatThaiDate(latestData.date) : '...'}
+            </p>
+          </div>
+          
+          <a 
+            href="https://tmn.app.link/dQ0mj5UIx2b" 
+            target="_blank" 
+            rel="noopener noreferrer"
+            className="flex items-center gap-2 text-xs font-bold text-orange-600 bg-orange-100 hover:bg-orange-200 dark:bg-orange-500/20 dark:text-orange-400 dark:hover:bg-orange-500/30 px-3 py-2 rounded-xl transition-all border border-orange-200 dark:border-orange-500/30"
+          >
+            <div className="w-6 h-6 bg-white/20 rounded-full flex items-center justify-center">
+              <Coffee className="w-3.5 h-3.5" />
+            </div>
+            เลี้ยงกาแฟ
+          </a>
+
+          {authLoading ? (
+            <div className="w-8 h-8 rounded-full bg-slate-100 dark:bg-slate-800 animate-pulse" />
+          ) : user ? (
+            <div className="flex items-center gap-3 pl-2 border-l border-slate-100 dark:border-slate-800">
+               <ProfileMenu user={user} logout={logout} />
+            </div>
+          ) : (
+            <button 
+              onClick={signInWithGoogle}
+              className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold px-5 py-2.5 rounded-xl transition-all shadow-lg shadow-emerald-500/20 active:scale-95"
+            >
+              Sign In
+            </button>
+          )}
+
+          <button
+            onClick={() => setTheme(theme === 'light' ? 'dark' : 'light')}
+            className="w-10 h-10 flex items-center justify-center rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 transition-colors"
+          >
+            {theme === 'light' ? <Activity className="w-4 h-4" /> : <Sparkles className="w-4 h-4" />}
+          </button>
+        </div>
+      </div>
+    </header>
+  );
+};
+
+  const MobileBottomNav = () => {
+    const { pathname } = useLocation();
+    
+    return (
+      <nav className="fixed bottom-0 left-0 right-0 z-[60] bg-white/80 dark:bg-slate-900/80 backdrop-blur-2xl border-t border-slate-200 dark:border-slate-800 md:hidden pb-[env(safe-area-inset-bottom)]">
+        <div className="flex justify-between items-center h-16 px-8">
+          <Link to="/" className={clsx(
+            "flex flex-col items-center gap-1 transition-all relative group",
+            pathname === '/' ? "text-emerald-600 dark:text-emerald-400" : "text-slate-400"
+          )}>
+            <div className={clsx(
+              "p-2 rounded-xl transition-all",
+              pathname === '/' ? "bg-emerald-100/50 dark:bg-emerald-500/20" : ""
+            )}>
+              <Activity className="w-6 h-6" />
+            </div>
+            <span className="text-[10px] font-black uppercase tracking-tight">Market</span>
+            {pathname === '/' && <motion.div layoutId="nav-dot" className="absolute -bottom-1 w-1 h-1 bg-emerald-500 rounded-full" />}
+          </Link>
+
+          <Link to="/portfolio" className={clsx(
+            "flex flex-col items-center gap-1 transition-all relative group",
+            pathname === '/portfolio' ? "text-emerald-600 dark:text-emerald-400" : "text-slate-400"
+          )}>
+            <div className={clsx(
+              "p-2 rounded-xl transition-all",
+              pathname === '/portfolio' ? "bg-emerald-100/50 dark:bg-emerald-500/20" : ""
+            )}>
+              <Wallet className="w-6 h-6" />
+            </div>
+            <span className="text-[10px] font-black uppercase tracking-tight">Portfolio</span>
+            {pathname === '/portfolio' && <motion.div layoutId="nav-dot" className="absolute -bottom-1 w-1 h-1 bg-emerald-500 rounded-full" />}
+          </Link>
+
+          <Link to="/calculator" className={clsx(
+            "flex flex-col items-center gap-1 transition-all relative group",
+            pathname === '/calculator' ? "text-emerald-600 dark:text-emerald-400" : "text-slate-400"
+          )}>
+            <div className={clsx(
+              "p-2 rounded-xl transition-all",
+              pathname === '/calculator' ? "bg-emerald-100/50 dark:bg-emerald-500/20" : ""
+            )}>
+              <Sparkles className="w-6 h-6" />
+            </div>
+            <span className="text-[10px] font-black uppercase tracking-tight">Tools</span>
+            {pathname === '/calculator' && <motion.div layoutId="nav-dot" className="absolute -bottom-1 w-1 h-1 bg-emerald-500 rounded-full" />}
+          </Link>
+
+          <Link to="/profile" className={clsx(
+            "flex flex-col items-center gap-1 transition-all relative group",
+            pathname === '/profile' ? "text-emerald-600 dark:text-emerald-400" : "text-slate-400"
+          )}>
+            <div className={clsx(
+              "p-2 rounded-xl transition-all",
+              pathname === '/profile' ? "bg-emerald-100/50 dark:bg-emerald-500/20" : ""
+            )}>
+              <UserIcon className="w-6 h-6" />
+            </div>
+            <span className="text-[10px] font-black uppercase tracking-tight">Profile</span>
+            {pathname === '/profile' && <motion.div layoutId="nav-dot" className="absolute -bottom-1 w-1 h-1 bg-emerald-500 rounded-full" />}
+          </Link>
+        </div>
+      </nav>
+    );
+  };

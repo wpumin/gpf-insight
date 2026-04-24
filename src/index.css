@@ -9,4 +9,8 @@
   .dark body {
     @apply bg-slate-950 text-slate-100;
   }
+  * {
+    @apply focus:outline-none focus:ring-0 active:outline-none;
+    -webkit-tap-highlight-color: transparent;
+  }
 }

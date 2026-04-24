@@ -78,7 +78,7 @@ export const CustomMixBuilder = ({
             <PieChartIcon className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
           </div>
           <div>
-            <h3 className="text-sm font-bold text-slate-800 dark:text-slate-200">Custom Portfolio Mix</h3>
+            <h3 className="text-sm font-bold text-slate-800 dark:text-slate-200">จำลองพอร์ตลงทุน (Custom Mix)</h3>
             <p className="text-[11px] text-slate-500 font-medium">จำลองพอร์ตที่ผสมสัดส่วนด้วยตัวเอง (รวมให้ครบ 100%)</p>
           </div>
         </div>
@@ -246,9 +246,9 @@ export const AlertMessenger = ({ data, allFunds }: { data: any[], allFunds: stri
       <div className="flex items-center justify-between mb-1 px-1">
         <div className="flex items-center gap-2">
           <Bell className="w-4 h-4 text-indigo-500" />
-          <h3 className="text-xs font-bold text-slate-800 dark:text-slate-200 uppercase tracking-tight">Market Strategy Alerts</h3>
+          <h3 className="text-xs font-bold text-slate-800 dark:text-slate-200 uppercase tracking-tight">สัญญาณการสับเปลี่ยนแผน (Strategy)</h3>
         </div>
-        <span className="text-[10px] text-slate-400 font-bold bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded-full border border-slate-200 dark:border-slate-700">อัปเดตรายวัน</span>
+        <span className="text-[11px] text-slate-400 font-bold bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded-full border border-slate-200 dark:border-slate-700">อัปเดตข้อมูลประจำวัน</span>
       </div>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
         <AnimatePresence mode="popLayout">

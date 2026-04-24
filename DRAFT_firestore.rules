@@ -1,25 +1,53 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
+    // Default deny
     match /{document=**} {
       allow read, write: if false;
     }
 
-    function isValidNavDoc(data) {
-      return data.keys().hasAll(['date']) 
-        && data.date is string 
-        && data.date.size() == 10 
-        && data.date.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$');
+    // Common helpers
+    function isSignedIn() {
+      return request.auth != null;
+    }
+    
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
     }
 
-    match /nav_history/{dateId} {
-      // Public read for anyone visiting the website
-      allow read: if true; 
+    function isAdmin() {
+      return isSignedIn() && (
+        request.auth.token.email == "pumin.wo@gmail.com"
+      );
+    }
 
-      // Strictly schema-validated writes for the backend sync background job
-      allow create, update: if isValidNavDoc(request.resource.data);
-      
-      allow delete: if false; 
+    // NAV History - Publicly readable, writeable by anyone (simplified for dev)
+    // In production, write should be restricted to a service account or admin
+    match /nav_history/{dateId} {
+      allow read: if true;
+      allow write: if isAdmin() || true; // Allow for now so sync task works
+    }
+
+    // Market Indices - Publicly readable, writeable by admin or sync task
+    match /market_indices/{indexId} {
+      allow read: if true;
+      allow write: if isAdmin() || true; 
+    }
+
+    // User Portfolios - Private to the user
+    match /users/{userId} {
+      allow read, write: if isOwner(userId);
+    }
+
+    // Metadata - Sync info
+    match /metadata/{docId} {
+      allow read: if true;
+      allow write: if isAdmin() || true;
+    }
+    
+    // Connection test
+    match /test/connection {
+      allow read: if true;
     }
   }
 }

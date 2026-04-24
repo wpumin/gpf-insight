@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { RefreshCcw, ArrowRight, TrendingUp, ShieldCheck, Activity } from 'lucide-react';
 import { clsx } from 'clsx';
 
-export const DynamicHoldSimulator = ({ data, allFunds }: { data: any[], allFunds: string[] }) => {
+export const DynamicHoldSimulator = ({ data, allFunds, customMix = [] }: { data: any[], allFunds: string[], customMix?: any[] }) => {
   const [selectedFund, setSelectedFund] = useState<string>('');
   const [analyzing, setAnalyzing] = useState(false);
   const [result, setResult] = useState<any>(null);
@@ -20,7 +20,25 @@ export const DynamicHoldSimulator = ({ data, allFunds }: { data: any[], allFunds
       const latest = data[data.length - 1];
       const monthAgo = data[data.length - 30] || data[0];
       
-      const currentPerf = ((Number(latest[fund]) - Number(monthAgo[fund])) / Number(monthAgo[fund])) * 100;
+      let currentPerf = 0;
+      let displayFundName = fund;
+
+      if (fund === 'MY_CUSTOM_MIX') {
+        displayFundName = 'พอร์ตผสมส่วนตัวของท่าน';
+        let latestVal = 0;
+        let monthAgoVal = 0;
+        customMix.forEach(m => {
+          const l = Number(latest[m.fund]);
+          const mo = Number(monthAgo[m.fund]);
+          if (!isNaN(l) && !isNaN(mo)) {
+            latestVal += (l * m.percentage) / 100;
+            monthAgoVal += (mo * m.percentage) / 100;
+          }
+        });
+        currentPerf = monthAgoVal !== 0 ? ((latestVal - monthAgoVal) / monthAgoVal) * 100 : 0;
+      } else {
+        currentPerf = ((Number(latest[fund]) - Number(monthAgo[fund])) / Number(monthAgo[fund])) * 100;
+      }
       
       // Calculate best alternative
       let bestAlt = '';
@@ -42,17 +60,17 @@ export const DynamicHoldSimulator = ({ data, allFunds }: { data: any[], allFunds
 
       if (currentPerf > 1.5) {
         action = 'HOLD';
-        recommendation = `กองทุน ${fund} มีโมเมนตัมกราฟขาขึ้นที่แข็งแกร่ง (Strong Uptrend) จากปัจจัยมหภาคในปัจจุบัน แนะนำให้ "ถือต่อ" เพื่อรันเทรนด์กำไร ไม่มีความจำเป็นต้องสับเปลี่ยนในระยะสั้น`;
+        recommendation = `กองทุน ${displayFundName} มีโมเมนตัมกราฟขาขึ้นที่แข็งแกร่ง (Strong Uptrend) จากปัจจัยมหภาคในปัจจุบัน แนะนำให้ "ถือต่อ" เพื่อรันเทรนด์กำไร ไม่มีความจำเป็นต้องสับเปลี่ยนในระยะสั้น`;
         icon = <TrendingUp className="w-8 h-8 text-emerald-500" />;
         colorClass = 'text-emerald-500 border-emerald-500/30 bg-emerald-50 dark:bg-emerald-900/10';
       } else if (currentPerf < -1.0) {
          action = 'SWITCH';
-         recommendation = `แนวโน้มราคามีการย่อตัวต่อเนื่องและมีความผันผวนสูง (Downside Risk) หากรับความเสี่ยงไม่ได้ แนะนำให้พิจารณาสับเปลี่ยนไปยัง "${bestAlt}" ซึ่งมีผลตอบแทนย้อนหลัง 1 เดือนที่แข็งแกร่งและน่าสนใจกว่า (${bestPerf > 0 ? '+' : ''}${bestPerf.toFixed(2)}%)`;
+         recommendation = `แนวโน้มราคามีการย่อตัวต่อเนื่องและมีความผันผวนสูง (Downside Risk) สำหรับ ${displayFundName} หากรับความเสี่ยงไม่ได้ แนะนำให้พิจารณาสับเปลี่ยนไปยัง "${bestAlt}" ซึ่งมีผลตอบแทนย้อนหลัง 1 เดือนที่แข็งแกร่งและน่าสนใจกว่า (${bestPerf > 0 ? '+' : ''}${bestPerf.toFixed(2)}%)`;
          icon = <RefreshCcw className="w-8 h-8 text-amber-500" />;
          colorClass = 'text-amber-500 border-amber-500/30 bg-amber-50 dark:bg-amber-900/10';
       } else {
          action = 'OBSERVE';
-         recommendation = 'สภาวะราคาอยู่ในช่วงพักฐาน (Sideways) แนะนำให้เฝ้าระวังและ "ถือครองไปก่อน" หากมีการเปลี่ยนแปลงนโยบายดอกเบี้ยในเร็วๆ นี้ อาจส่งผลบวกต่อกองทุนนี้ได้';
+         recommendation = `สภาวะราคา ${displayFundName} อยู่ในช่วงพักฐาน (Sideways) แนะนำให้เฝ้าระวังและ "ถือครองไปก่อน" หากมีการเปลี่ยนแปลงนโยบายดอกเบี้ยในเร็วๆ นี้ อาจส่งผลบวกต่อกองทุนนี้ได้`;
          icon = <ShieldCheck className="w-8 h-8 text-blue-500" />;
          colorClass = 'text-blue-500 border-blue-500/30 bg-blue-50 dark:bg-blue-900/10';
       }
@@ -93,7 +111,10 @@ export const DynamicHoldSimulator = ({ data, allFunds }: { data: any[], allFunds
             setResult(null);
           }}
         >
-          <option value="" disabled>เลือกโครงการที่ท่านถือครองอยู่...</option>
+          <option value="" disabled>เลือกกองทุนที่ท่านถือครองอยู่...</option>
+          {customMix && customMix.length > 0 && (
+            <option value="MY_CUSTOM_MIX" className="font-bold text-indigo-600 dark:text-indigo-400">✨ พอร์ตผสมส่วนตัวของท่าน</option>
+          )}
           {allFunds.map(f => <option key={f} value={f}>{f}</option>)}
         </select>
         <button 

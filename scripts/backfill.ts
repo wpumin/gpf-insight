@@ -48,8 +48,27 @@ async function processDataAndSaveToFirestore(jsonArray: any[]) {
         
         try {
             const docRef = doc(db, 'nav_history', stdDate);
-            const docSnap = await getDoc(docRef);
             
+            // Retry logic for Firestore operations
+            let docSnap;
+            let retries = 3;
+            while (retries > 0) {
+                try {
+                    docSnap = await getDoc(docRef);
+                    break;
+                } catch (err: any) {
+                    if (err.message?.includes('offline') && retries > 1) {
+                        console.log(`[Backfill] Firestore offline, retrying ${stdDate}... (${retries} left)`);
+                        await new Promise(r => setTimeout(r, 2000));
+                        retries--;
+                    } else {
+                        throw err;
+                    }
+                }
+            }
+            
+            if (!docSnap) continue;
+
             let record: any = { date: stdDate };
             if (docSnap.exists()) {
                 record = docSnap.data();

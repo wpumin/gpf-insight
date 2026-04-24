@@ -1,0 +1,55 @@
+{
+  "entities": {
+    "User": {
+      "title": "User Profile",
+      "description": "User specific portfolio and settings",
+      "type": "object",
+      "properties": {
+        "portfolio": {
+          "type": "array",
+          "description": "List of funds and units held"
+        },
+        "salarySettings": {
+          "type": "object",
+          "description": "Salary and contribution settings"
+        }
+      }
+    },
+    "NavRecord": {
+      "title": "NAV Record",
+      "description": "Historical NAV data for a specific date",
+      "type": "object",
+      "properties": {
+        "date": { "type": "string", "format": "date" }
+      }
+    },
+    "MarketIndex": {
+      "title": "Market Index",
+      "description": "Global market indices like Fear and Greed",
+      "type": "object",
+      "properties": {
+        "value": { "type": "number" },
+        "last_updated": { "type": "string", "format": "date-time" },
+        "source": { "type": "string" }
+      }
+    }
+  },
+  "firestore": {
+    "/nav_history/{date}": {
+      "schema": "NavRecord",
+      "description": "Historical NAV data"
+    },
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "User portfolios"
+    },
+    "/market_indices/{indexId}": {
+      "schema": "MarketIndex",
+      "description": "Market sentiment indices"
+    },
+    "/metadata/{docId}": {
+      "schema": "object",
+      "description": "Sync metadata"
+    }
+  }
+}

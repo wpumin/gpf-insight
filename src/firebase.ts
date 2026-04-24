@@ -1,5 +1,6 @@
 import { initializeApp } from 'firebase/app';
 import { getFirestore } from 'firebase/firestore';
+import { getAuth } from 'firebase/auth';
 
 export const firebaseConfig = {
   projectId: "gen-lang-client-0309029978",
@@ -11,5 +12,6 @@ export const firebaseConfig = {
 };
 
 export const app = initializeApp(firebaseConfig);
+export const auth = getAuth(app);
 // Note: We MUST map to the correct enterprise database ID we provisioned.
 export const db = getFirestore(app, "ai-studio-b8dd6132-c066-4d98-850b-446562756b24");

@@ -6,18 +6,51 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
-    // Allow public read/write for NAV History
-    // (In production, write should be restricted to a server-side service account)
-    match /nav_history/{docId} {
-      allow read, write: if true;
+    // Common helpers
+    function isSignedIn() {
+      return request.auth != null;
+    }
+    
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
     }
 
-    // Allow public read/write for metadata (sync info)
+    function isAdmin() {
+      // Hardcoded admin email for now
+      return isSignedIn() && request.auth.token.email == "pumin.wo@gmail.com";
+    }
+
+    // Validation helper for user data
+    function isValidUser(data) {
+      return data.keys().hasAny(['portfolio', 'salarySettings']);
+    }
+
+    // NAV History - Publicly readable
+    match /nav_history/{dateId} {
+      allow read: if true;
+      allow write: if true; // Required for sync script on server
+    }
+
+    // Market Indices - Publicly readable
+    match /market_indices/{indexId} {
+      allow read: if true;
+      allow write: if true; 
+    }
+
+    // User Portfolios - Private to the user
+    match /users/{userId} {
+      allow read: if isOwner(userId);
+      allow create, update: if isOwner(userId) && isValidUser(request.resource.data);
+      allow delete: if isOwner(userId);
+    }
+
+    // Metadata - Sync info
     match /metadata/{docId} {
-      allow read, write: if true;
+      allow read: if true;
+      allow write: if true;
     }
-
-    // Allow connection test
+    
+    // Connection test
     match /test/connection {
       allow read: if true;
     }
