@@ -53,13 +53,26 @@ export const MyPortfolio: React.FC<MyPortfolioProps> = ({ latestData, allFunds, 
     // The onSnapshot will provide the source of truth if logged in
   }, [user]);
 
-  // Handle Initial Load and Firestore Sub
+  // Handle Initial Load and Firestore Check
   useEffect(() => {
-    let unsub: () => void = () => {};
-    
-    if (user) {
+    if (!user) {
+      // Load from localStorage if not logged in
+      if (typeof localStorage !== 'undefined') {
+        const savedP = localStorage.getItem('gpf_portfolio');
+        const savedS = localStorage.getItem('gpf_salary_settings');
+        if (savedP) setItems(JSON.parse(savedP));
+        if (savedS) setSalarySettings(prev => ({ ...prev, ...JSON.parse(savedS) }));
+      }
+      setLoading(false);
+      return;
+    }
+
+    const fetchUserPortfolio = async () => {
       setLoading(true);
-      unsub = onSnapshot(doc(db, 'users', user.uid), (snapshot) => {
+      try {
+        const docRef = doc(db, 'users', user.uid);
+        const snapshot = await getDoc(docRef);
+        
         if (snapshot.exists()) {
           const data = snapshot.data();
           if (data.portfolio) {
@@ -70,31 +83,26 @@ export const MyPortfolio: React.FC<MyPortfolioProps> = ({ latestData, allFunds, 
             setSalarySettings(prev => ({ ...prev, ...data.salarySettings }));
             localStorage.setItem('gpf_salary_settings', JSON.stringify(data.salarySettings));
           }
-        }
-        setLoading(false);
-      }, (err) => {
-        console.error("Firestore sync error:", err);
-        // Fallback to localStorage if Firestore fails (Quota exceeded etc)
-        if (typeof localStorage !== 'undefined') {
+        } else {
+          // If no doc yet, check local storage
           const savedP = localStorage.getItem('gpf_portfolio');
           const savedS = localStorage.getItem('gpf_salary_settings');
           if (savedP) setItems(JSON.parse(savedP));
           if (savedS) setSalarySettings(prev => ({ ...prev, ...JSON.parse(savedS) }));
         }
-        setLoading(false);
-      });
-    } else {
-      // Load from localStorage if not logged in
-      if (typeof localStorage !== 'undefined') {
+      } catch (err) {
+        console.error("Firestore fetch error:", err);
+        // Fallback to localStorage
         const savedP = localStorage.getItem('gpf_portfolio');
         const savedS = localStorage.getItem('gpf_salary_settings');
         if (savedP) setItems(JSON.parse(savedP));
         if (savedS) setSalarySettings(prev => ({ ...prev, ...JSON.parse(savedS) }));
+      } finally {
+        setLoading(false);
       }
-      setLoading(false);
-    }
-    
-    return () => unsub();
+    };
+
+    fetchUserPortfolio();
   }, [user]);
 
   // Save changes ONLY if not loading and user is set OR if local changes happen
@@ -392,7 +400,7 @@ export const MyPortfolio: React.FC<MyPortfolioProps> = ({ latestData, allFunds, 
 
           <div className="grid grid-cols-2 gap-4 mt-6">
             <div className="bg-black/10 backdrop-blur-sm p-3 rounded-2xl border border-white/5">
-              <p className="text-xs text-emerald-200/60 font-black uppercase tracking-widest mb-1">ยอดออมรายเดือน (Auto-DCA)</p>
+              <p className="text-xs text-emerald-200/60 font-black uppercase tracking-widest mb-1">ยอดออมรายเดือนอัตโนมัติ</p>
               <p className="text-lg font-bold">฿{totalMonthlyInvestment.toLocaleString()}</p>
             </div>
             <div className="bg-black/10 backdrop-blur-sm p-3 rounded-2xl border border-white/5">
@@ -785,7 +793,7 @@ export const MyPortfolio: React.FC<MyPortfolioProps> = ({ latestData, allFunds, 
 
                   <p className="text-[10px] text-slate-500 mb-4 ml-1 leading-relaxed">
                     * <span className="font-bold text-slate-700 dark:text-slate-300">สัดส่วนจริง</span> คือสัดส่วนของกองทุนที่คุณถือครองอยู่จริง ณ ปัจจุบัน ซึ่งจะขยับตามราคา NAV 
-                    <br/>* <span className="font-bold text-slate-700 dark:text-slate-300">สัดส่วนเป้าหมาย</span> คือสัดส่วนที่คุณตั้งใจจะออมเพิ่มในอนาคต ยอด Auto-DCA จะใช้สัดส่วนนี้
+                    <br/>* <span className="font-bold text-slate-700 dark:text-slate-300">สัดส่วนเป้าหมาย</span> คือสัดส่วนที่คุณตั้งใจจะออมเพิ่มในอนาคต ยอดออมรายเดือนอัตโนมัติจะใช้สัดส่วนนี้
                   </p>
 
                   {/* Allocation Warning for Sum Check */}
@@ -915,7 +923,7 @@ export const MyPortfolio: React.FC<MyPortfolioProps> = ({ latestData, allFunds, 
                 </div>
 
                 <div>
-                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 block">จำนวนหน่วยสะสม จากแอป My GPF</label>
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 block">จำนวนหน่วยสะสม</label>
                   <input 
                     type="number"
                     placeholder="0.0000"
