@@ -258,11 +258,22 @@ export const MyPortfolio: React.FC<MyPortfolioProps> = ({ latestData, allFunds, 
 
     const runAutoDCA = () => {
       const now = new Date();
-      const thaiNow = new Date(now.toLocaleString("en-US", { timeZone: "Asia/Bangkok" }));
-      const todayStr = `${thaiNow.getFullYear()}-${thaiNow.getMonth() + 1}-${thaiNow.getDate()}`;
+      // Ensure we are using Bangkok time (GMT+7)
+      const options: Intl.DateTimeFormatOptions = { timeZone: "Asia/Bangkok", hour12: false, hour: 'numeric', minute: 'numeric', year: 'numeric', month: 'numeric', day: 'numeric' };
+      const formatter = new Intl.DateTimeFormat('en-US', options);
+      const parts = formatter.formatToParts(now);
+      const getPart = (type: string) => parts.find(p => p.type === type)?.value;
+      
+      const bkkDay = getPart('day');
+      const bkkMonth = getPart('month');
+      const bkkYear = getPart('year');
+      const bkkHour = parseInt(getPart('hour') || '0');
+      
+      const todayStr = `${bkkYear}-${bkkMonth}-${bkkDay}`;
       const lastRun = localStorage.getItem('gpf_last_daily_dca_run');
 
-      if (lastRun !== todayStr && thaiNow.getHours() >= 12) {
+      // Only run if it's 12:00 or later in Bangkok and hasn't run today
+      if (lastRun !== todayStr && bkkHour >= 12) {
         setItems(prev => {
           let newItems = [...prev];
           const dailyMoney = totalMonthlyInvestment / 30;
@@ -481,7 +492,7 @@ export const MyPortfolio: React.FC<MyPortfolioProps> = ({ latestData, allFunds, 
           <div className="flex items-center justify-between mb-2">
             <h3 className="font-bold text-slate-800 dark:text-white flex items-center gap-2">
               <PieChart className="w-5 h-5 text-emerald-500" />
-              สัดส่วนจริง Actual
+              สัดส่วนจริง
             </h3>
           </div>
           <p className="text-xs text-slate-400 font-medium mb-6">กระจายตามประเภทแผนการลงทุน</p>
@@ -524,7 +535,7 @@ export const MyPortfolio: React.FC<MyPortfolioProps> = ({ latestData, allFunds, 
                   </RePieChart>
                 </ResponsiveContainer>
                 <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-                  <p className="text-[11px] text-slate-400 font-bold uppercase tracking-widest">รวม</p>
+                  <p className="text-[11px] text-slate-400 font-bold uppercase tracking-widest">จริง</p>
                   <p className="text-lg font-black text-slate-800 dark:text-white">100%</p>
                 </div>
               </div>
@@ -542,7 +553,7 @@ export const MyPortfolio: React.FC<MyPortfolioProps> = ({ latestData, allFunds, 
           <div className="flex items-center justify-between mb-2">
             <h3 className="font-bold text-slate-800 dark:text-white flex items-center gap-2">
               <Settings2 className="w-5 h-5 text-indigo-500" />
-              สัดส่วนเป้าหมาย Plan
+              สัดส่วนเป้าหมาย
             </h3>
           </div>
           <p className="text-xs text-slate-400 font-medium mb-6">แบ่งตามการตั้งค่าแผนการลงทุนที่เลือก</p>
@@ -732,7 +743,7 @@ export const MyPortfolio: React.FC<MyPortfolioProps> = ({ latestData, allFunds, 
                       </div>
                     </div>
                     <p className="text-[10px] font-bold text-slate-400 mt-2 ml-1">
-                      เลือกสัดส่วนออมเพิ่มได้ตั้งแต่ 3% ถึง 27% (ไม่รวมสมทบรัฐ 3%)
+                      เลือกสัดส่วนออมเพิ่มได้ตั้งแต่ 3% ถึง 27% ไม่รวมสมทบรัฐ 3%
                     </p>
                   </div>
                 </div>
@@ -758,7 +769,7 @@ export const MyPortfolio: React.FC<MyPortfolioProps> = ({ latestData, allFunds, 
                     </button>
                   </div>
                   <p className="text-[10px] text-emerald-600/70 dark:text-emerald-400/60 leading-tight">
-                    ระบบจะคำนวณและเพิ่มจำนวนหน่วย (Units) ให้คุณอัตโนมัติรายวัน (โดยเฉลี่ยจากยอดเงินสะสมรายเดือน) ทุกเวลา 12:00 น.
+                    ระบบจะคำนวณและเพิ่มจำนวนหน่วย Units ให้คุณอัตโนมัติรายวัน โดยเฉลี่ยจากยอดเงินสะสมรายเดือน ทุกเวลา 12:00 น.
                   </p>
                 </div>
 
@@ -771,6 +782,11 @@ export const MyPortfolio: React.FC<MyPortfolioProps> = ({ latestData, allFunds, 
                       {hasTempAllocationError && " ต้องครบ 100%"}
                     </span>
                   </div>
+
+                  <p className="text-[10px] text-slate-500 mb-4 ml-1 leading-relaxed">
+                    * <span className="font-bold text-slate-700 dark:text-slate-300">สัดส่วนจริง</span> คือสัดส่วนของกองทุนที่คุณถือครองอยู่จริง ณ ปัจจุบัน ซึ่งจะขยับตามราคา NAV 
+                    <br/>* <span className="font-bold text-slate-700 dark:text-slate-300">สัดส่วนเป้าหมาย</span> คือสัดส่วนที่คุณตั้งใจจะออมเพิ่มในอนาคต ยอด Auto-DCA จะใช้สัดส่วนนี้
+                  </p>
 
                   {/* Allocation Warning for Sum Check */}
                   {tempAllocationTotal > 100 && (

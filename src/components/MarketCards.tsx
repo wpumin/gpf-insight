@@ -24,7 +24,7 @@ const formatThaiDateTime = (dateStr: string) => {
     const month = format(date, 'MMM', { locale: th });
     const year = parseInt(format(date, 'yyyy')) + 543;
     const time = format(date, 'HH:mm');
-    return `${day} ${month} ${year} (${time} น.)`;
+    return `${day} ${month} ${year} ${time} น.`;
   } catch {
     return dateStr;
   }
@@ -37,23 +37,50 @@ export const FearAndGreedCard = () => {
     const [loading, setLoading] = useState(true);
   
     useEffect(() => {
-      // Fetch from Firebase market_indices/fng
-      const unsub = onSnapshot(doc(db, 'market_indices', 'fng'), (snapshot) => {
-        if (snapshot.exists()) {
-          const data = snapshot.data();
-          setScore(data.value ?? data.score ?? 0);
-          setLastUpdated(data.last_updated || null);
-          setSource(data.source || 'CNN Business');
-        } else {
-          // Fallback to a hardcoded "Neutral" if Firebase is empty and automated fetch fails
-          // We avoid alternative.me (Crypto) as it confuses the user for a stock-based app
-          setScore(50);
-          setSource('Market Sentiment (Sync Pending)');
-        }
-        setLoading(false);
-      });
+      const fetchData = async () => {
+        try {
+          const now = Date.now();
+          const LAST_FETCH_KEY = 'gpf_fng_last_fetch';
+          const lastFetch = localStorage.getItem(LAST_FETCH_KEY);
+          
+          if (lastFetch && (now - parseInt(lastFetch) < 3600000)) {
+            const cached = localStorage.getItem('gpf_fng_cache');
+            if (cached) {
+              const data = JSON.parse(cached);
+              setScore(data.score);
+              setLastUpdated(data.last_updated);
+              setSource(data.source);
+              setLoading(false);
+              return;
+            }
+          }
 
-      return () => unsub();
+          const { getDoc, doc } = await import('firebase/firestore');
+          const snap = await getDoc(doc(db, 'market_indices', 'fng'));
+          if (snap.exists()) {
+            const data = snap.data();
+            const scoreVal = data.value ?? data.score ?? 0;
+            setScore(scoreVal);
+            setLastUpdated(data.last_updated || null);
+            setSource(data.source || 'CNN Business');
+            
+            localStorage.setItem('gpf_fng_cache', JSON.stringify({
+              score: scoreVal,
+              last_updated: data.last_updated,
+              source: data.source
+            }));
+            localStorage.setItem(LAST_FETCH_KEY, now.toString());
+          }
+          setLoading(false);
+        } catch (error) {
+          console.error("F&G fetch error:", error);
+          setLoading(false);
+        }
+      };
+
+      fetchData();
+      const interval = setInterval(fetchData, 3600000);
+      return () => clearInterval(interval);
     }, []);
   
     const getSentiment = (val: number) => {

@@ -115,18 +115,56 @@ function AppContent() {
   }, [theme]);
 
   useEffect(() => {
-    // Real-time Synchronizers
-    const unsubMetadata = onSnapshot(doc(db, 'metadata', 'sync_info'), (snapshot) => {
-      if (snapshot.exists()) setLastSync(snapshot.data().last_updated);
-    });
+    const fetchLatestData = async () => {
+      try {
+        const now = Date.now();
+        const LAST_FETCH_KEY = 'gpf_last_data_fetch_time';
+        const NAV_DATA_KEY = 'gpf_nav_data_cache';
+        const SYNC_INFO_KEY = 'gpf_sync_info_cache';
+        
+        const lastFetch = localStorage.getItem(LAST_FETCH_KEY);
+        const cachedNav = localStorage.getItem(NAV_DATA_KEY);
+        const cachedSync = localStorage.getItem(SYNC_INFO_KEY);
 
-    const q = query(collection(db, 'nav_history'), orderBy('date', 'asc'));
-    const unsubNav = onSnapshot(q, (snapshot) => {
-      const fetchedData: any[] = [];
-      snapshot.forEach(doc => fetchedData.push(doc.data()));
-      setData(prev => JSON.stringify(prev) !== JSON.stringify(fetchedData) ? fetchedData : prev);
-      setLoading(false);
-    });
+        // If we have cached data and it's less than 1 hour old, use it
+        if (cachedNav && cachedSync && lastFetch && (now - parseInt(lastFetch) < 3600000)) {
+          setData(JSON.parse(cachedNav));
+          setLastSync(JSON.parse(cachedSync));
+          setLoading(false);
+          return;
+        }
+
+        // Fetch Metadata
+        const { getDoc, getDocs, doc, collection, query, orderBy } = await import('firebase/firestore');
+        const metadataSnap = await getDoc(doc(db, 'metadata', 'sync_info'));
+        let newSync = lastSync;
+        if (metadataSnap.exists()) {
+          newSync = metadataSnap.data().last_updated;
+          setLastSync(newSync);
+          localStorage.setItem(SYNC_INFO_KEY, JSON.stringify(newSync));
+        }
+
+        // Fetch NAV History
+        const q = query(collection(db, 'nav_history'), orderBy('date', 'asc'));
+        const navSnap = await getDocs(q);
+        const fetchedData: any[] = [];
+        navSnap.forEach(doc => fetchedData.push(doc.data()));
+        
+        if (fetchedData.length > 0) {
+          setData(fetchedData);
+          localStorage.setItem(NAV_DATA_KEY, JSON.stringify(fetchedData));
+          localStorage.setItem(LAST_FETCH_KEY, now.toString());
+        }
+        setLoading(false);
+      } catch (error) {
+        console.error("Data fetch error:", error);
+        setLoading(false);
+      }
+    };
+
+    fetchLatestData();
+    // Refresh every hour
+    const refreshInterval = setInterval(fetchLatestData, 3600000);
 
     const clearSplash = () => {
       const splash = document.getElementById('pwa-splash');
@@ -149,8 +187,7 @@ function AppContent() {
     }, 100);
 
     return () => {
-      unsubMetadata();
-      unsubNav();
+      clearInterval(refreshInterval);
       clearInterval(checkDataLoad);
       clearTimeout(safetyTimer);
     };
@@ -508,7 +545,7 @@ const DesktopHeader = ({ theme, setTheme, latestData, formatThaiDate }: any) => 
 
         <div className="flex items-center gap-4">
           <div className="text-right mr-2 hidden xl:block">
-            <p className="text-[10px] text-slate-400 dark:text-slate-500 uppercase tracking-widest font-bold">อัปเดตข้อมูลประจำวัน</p>
+            <p className="text-[10px] text-slate-400 dark:text-slate-500 uppercase tracking-widest font-bold">อัปเดตรายวัน 12:00 น.</p>
             <p className="text-xs font-mono text-slate-600 dark:text-slate-300">
               {latestData ? formatThaiDate(latestData.date) : '...'}
             </p>
