@@ -260,6 +260,41 @@ export const MyPortfolio: React.FC<MyPortfolioProps> = ({ latestData, allFunds, 
   // Consolidating all save logic into the existing master effect at line 75
   // Removing redundant effects at 223 and 227 later
 
+  // --- Payroll Recognition Helpers ---
+  const isBusinessDay = (date: Date) => {
+    const day = date.getDay();
+    return day !== 0 && day !== 6;
+  };
+
+  const getPayrollDates = (year: number, month: number, paymentCycle: 'monthly' | 'biweekly') => {
+    const dates: string[] = [];
+    
+    // Round 1: Mid-month (16th)
+    if (paymentCycle === 'biweekly') {
+      let d16 = new Date(year, month, 16);
+      while (!isBusinessDay(d16)) {
+        d16.setDate(d16.getDate() - 1);
+      }
+      dates.push(`${d16.getFullYear()}-${d16.getMonth() + 1}-${d16.getDate()}`);
+    }
+
+    // Round 2: End of month (3 business days before end)
+    const lastDay = new Date(year, month + 1, 0);
+    let count = 0;
+    let dEnd = new Date(lastDay);
+    while (count < 3) {
+      if (isBusinessDay(dEnd)) {
+        count++;
+      }
+      if (count < 3) {
+        dEnd.setDate(dEnd.getDate() - 1);
+      }
+    }
+    dates.push(`${dEnd.getFullYear()}-${dEnd.getMonth() + 1}-${dEnd.getDate()}`);
+    
+    return dates;
+  };
+
   // --- Daily Accrual Auto-DCA Logic ---
   useEffect(() => {
     if (!salarySettings.isAutoEnabled || !latestData) return;
@@ -277,19 +312,21 @@ export const MyPortfolio: React.FC<MyPortfolioProps> = ({ latestData, allFunds, 
       const bkkYear = getPart('year');
       const bkkHour = parseInt(getPart('hour') || '0');
       
-      const todayStr = `${bkkYear}-${bkkMonth}-${bkkDay}`;
-      const lastRun = localStorage.getItem('gpf_last_daily_dca_run');
+      const bkkDateStr = `${bkkYear}-${bkkMonth}-${bkkDay}`;
+      const payrollDates = getPayrollDates(parseInt(bkkYear || '2024'), parseInt(bkkMonth || '1') - 1, salarySettings.paymentCycle);
+      
+      const lastRun = localStorage.getItem('gpf_last_auto_dca_run');
 
-      // Only run if it's 12:00 or later in Bangkok and hasn't run today
-      if (lastRun !== todayStr && bkkHour >= 12) {
+      // Only run if it's a payroll date, and it's 12:00 or later in Bangkok, and hasn't run today
+      if (payrollDates.includes(bkkDateStr) && lastRun !== bkkDateStr && bkkHour >= 12) {
         setItems(prev => {
           let newItems = [...prev];
-          const dailyMoney = totalMonthlyInvestment / 30;
+          const investAmount = salarySettings.paymentCycle === 'biweekly' ? totalMonthlyInvestment / 2 : totalMonthlyInvestment;
 
           Object.entries(salarySettings.targetAllocations || {}).forEach(([fund, percent]) => {
             const p = percent as number;
             if (p > 0) {
-              const moneyForFund = dailyMoney * (p / 100);
+              const moneyForFund = investAmount * (p / 100);
               const nav = latestData[fund] as number;
               if (nav && nav > 0) {
                 const unitsToAdd = moneyForFund / nav;
@@ -304,14 +341,14 @@ export const MyPortfolio: React.FC<MyPortfolioProps> = ({ latestData, allFunds, 
           });
           return newItems;
         });
-        localStorage.setItem('gpf_last_daily_dca_run', todayStr);
+        localStorage.setItem('gpf_last_auto_dca_run', bkkDateStr);
       }
     };
 
     runAutoDCA();
     const interval = setInterval(runAutoDCA, 60000);
     return () => clearInterval(interval);
-  }, [salarySettings.isAutoEnabled, latestData, totalMonthlyInvestment, salarySettings.targetAllocations]);
+  }, [salarySettings.isAutoEnabled, latestData, totalMonthlyInvestment, salarySettings.targetAllocations, salarySettings.paymentCycle]);
 
   // Now the early returns handle rendering only
   if (!user && !loading) {
@@ -777,7 +814,7 @@ export const MyPortfolio: React.FC<MyPortfolioProps> = ({ latestData, allFunds, 
                     </button>
                   </div>
                   <p className="text-[10px] text-emerald-600/70 dark:text-emerald-400/60 leading-tight">
-                    ระบบจะคำนวณและเพิ่มจำนวนหน่วย Units ให้คุณอัตโนมัติรายวัน โดยเฉลี่ยจากยอดเงินสะสมรายเดือน ทุกเวลา 12:00 น.
+                    ระบบจะคำนวณและเพิ่มจำนวนหน่วย Units ให้คุณอัตโนมัติตามรอบการจ่ายเงินเดือน (3 วันทำการก่อนสิ้นเดือน หรือ 16th และ 3 วันทำการก่อนสิ้นเดือน) ทุกเวลา 12:00 น.
                   </p>
                 </div>
 
@@ -793,7 +830,7 @@ export const MyPortfolio: React.FC<MyPortfolioProps> = ({ latestData, allFunds, 
 
                   <p className="text-[10px] text-slate-500 mb-4 ml-1 leading-relaxed">
                     * <span className="font-bold text-slate-700 dark:text-slate-300">สัดส่วนจริง</span> คือสัดส่วนของกองทุนที่คุณถือครองอยู่จริง ณ ปัจจุบัน ซึ่งจะขยับตามราคา NAV 
-                    <br/>* <span className="font-bold text-slate-700 dark:text-slate-300">สัดส่วนเป้าหมาย</span> คือสัดส่วนที่คุณตั้งใจจะออมเพิ่มในอนาคต ยอดออมรายเดือนอัตโนมัติจะใช้สัดส่วนนี้
+                    <br/>* <span className="font-bold text-slate-700 dark:text-slate-300">สัดส่วนเป้าหมาย</span> คือสัดส่วนที่คุณตั้งใจจะออมเพิ่มในอนาคต ยอดออมรายเดือนอัตโนมัติจะใช้สัดส่วนนี้ (อัปเดตตามรอบเงินเดือน)
                   </p>
 
                   {/* Allocation Warning for Sum Check */}
