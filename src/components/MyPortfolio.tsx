@@ -47,20 +47,44 @@ export const MyPortfolio: React.FC<MyPortfolioProps> = ({ latestData, allFunds, 
 
   // Sync with Firestore if logged in, otherwise use localStorage
   useEffect(() => {
+    if (loading) return; // Wait for initial loading if necessary, but here loading is true by default
+    
+    // We only want to set items if we are NOT in the middle of a sync
+    // The onSnapshot will provide the source of truth if logged in
+  }, [user]);
+
+  // Handle Initial Load and Firestore Sub
+  useEffect(() => {
+    let unsub: () => void = () => {};
+    
     if (user) {
-      const unsub = onSnapshot(doc(db, 'users', user.uid), (snapshot) => {
+      setLoading(true);
+      unsub = onSnapshot(doc(db, 'users', user.uid), (snapshot) => {
         if (snapshot.exists()) {
           const data = snapshot.data();
-          if (data.portfolio) setItems(data.portfolio);
-          if (data.salarySettings) setSalarySettings(prev => ({ ...prev, ...data.salarySettings }));
+          if (data.portfolio) {
+            setItems(data.portfolio);
+            localStorage.setItem('gpf_portfolio', JSON.stringify(data.portfolio));
+          }
+          if (data.salarySettings) {
+            setSalarySettings(prev => ({ ...prev, ...data.salarySettings }));
+            localStorage.setItem('gpf_salary_settings', JSON.stringify(data.salarySettings));
+          }
         }
         setLoading(false);
       }, (err) => {
         console.error("Firestore sync error:", err);
+        // Fallback to localStorage if Firestore fails (Quota exceeded etc)
+        if (typeof localStorage !== 'undefined') {
+          const savedP = localStorage.getItem('gpf_portfolio');
+          const savedS = localStorage.getItem('gpf_salary_settings');
+          if (savedP) setItems(JSON.parse(savedP));
+          if (savedS) setSalarySettings(prev => ({ ...prev, ...JSON.parse(savedS) }));
+        }
         setLoading(false);
       });
-      return () => unsub();
     } else {
+      // Load from localStorage if not logged in
       if (typeof localStorage !== 'undefined') {
         const savedP = localStorage.getItem('gpf_portfolio');
         const savedS = localStorage.getItem('gpf_salary_settings');
@@ -69,11 +93,16 @@ export const MyPortfolio: React.FC<MyPortfolioProps> = ({ latestData, allFunds, 
       }
       setLoading(false);
     }
+    
+    return () => unsub();
   }, [user]);
 
-  // Save changes
+  // Save changes ONLY if not loading and user is set OR if local changes happen
+  // Using a separate ref or flag to prevent "phantom" saves on initial load is better
+  // but for now let's ensure we don't overwrite with defaults if data is still coming in
   useEffect(() => {
     if (loading) return;
+    
     const saveToFirestore = async () => {
       if (user) {
         try {
@@ -89,7 +118,10 @@ export const MyPortfolio: React.FC<MyPortfolioProps> = ({ latestData, allFunds, 
         localStorage.setItem('gpf_salary_settings', JSON.stringify(salarySettings));
       }
     };
-    saveToFirestore();
+
+    // Debounce saves slightly to avoid hitting firestore too hard
+    const timeout = setTimeout(saveToFirestore, 1000);
+    return () => clearTimeout(timeout);
   }, [items, salarySettings, user, loading]);
 
   const [isAdding, setIsAdding] = useState(false);
@@ -103,10 +135,28 @@ export const MyPortfolio: React.FC<MyPortfolioProps> = ({ latestData, allFunds, 
   const [fundToDelete, setFundToDelete] = useState<string | null>(null);
 
   const [tempSalary, setTempSalary] = useState(salarySettings.baseSalary.toString());
+  const [tempAllocations, setTempAllocations] = useState<Record<string, number>>(salarySettings.targetAllocations);
+  const [tempVoluntary, setTempVoluntary] = useState(salarySettings.voluntaryPercent);
 
   useEffect(() => {
     setTempSalary(salarySettings.baseSalary.toString());
-  }, [salarySettings.baseSalary]);
+    setTempAllocations(salarySettings.targetAllocations);
+    setTempVoluntary(salarySettings.voluntaryPercent);
+  }, [salarySettings.baseSalary, salarySettings.targetAllocations, salarySettings.voluntaryPercent]);
+
+  // Filtered funds for dropdown based on active target allocations
+  const activeTargetFunds = useMemo(() => {
+    return Object.entries(salarySettings.targetAllocations)
+      .filter(([_, percent]) => (percent as number) > 0)
+      .map(([name, _]) => name);
+  }, [salarySettings.targetAllocations]);
+
+  // Update newFund if it's not in activeTargetFunds
+  useEffect(() => {
+    if (activeTargetFunds.length > 0 && !activeTargetFunds.includes(newFund)) {
+      setNewFund(activeTargetFunds[0]);
+    }
+  }, [activeTargetFunds, newFund]);
 
   const addItem = () => {
     const units = parseFloat(newUnits);
@@ -164,9 +214,15 @@ export const MyPortfolio: React.FC<MyPortfolioProps> = ({ latestData, allFunds, 
   }, [salarySettings.targetAllocations]);
 
   const folderGoldName = "แผนทองคำ";
-  const goldAllocation = salarySettings.targetAllocations?.[folderGoldName] || 0;
-  const hasAllocationError = allocationTotal !== 100;
-  const hasGoldLimitError = goldAllocation > 20;
+
+  const tempAllocationTotal = useMemo(() => {
+    return Object.values(tempAllocations || {}).reduce((a, b) => (a as number) + (b as number), 0) as number;
+  }, [tempAllocations]);
+
+  const hasTempAllocationError = tempAllocationTotal !== 100;
+  const hasTempGoldLimitError = (tempAllocations[folderGoldName] || 0) > 20;
+
+  const hasGoldLimitError = (salarySettings.targetAllocations[folderGoldName] || 0) > 20;
 
   const targetChartData = useMemo(() => {
     return Object.entries(salarySettings.targetAllocations || {})
@@ -177,7 +233,7 @@ export const MyPortfolio: React.FC<MyPortfolioProps> = ({ latestData, allFunds, 
   const portfolioValue = useMemo(() => {
     if (!latestData) return 0;
     return items.reduce((acc, item) => {
-      const nav = latestData[item.fund] || 0;
+      const nav = (latestData as Record<string, number>)[item.fund] || 0;
       return acc + (nav * item.units);
     }, 0);
   }, [items, latestData]);
@@ -425,7 +481,7 @@ export const MyPortfolio: React.FC<MyPortfolioProps> = ({ latestData, allFunds, 
           <div className="flex items-center justify-between mb-2">
             <h3 className="font-bold text-slate-800 dark:text-white flex items-center gap-2">
               <PieChart className="w-5 h-5 text-emerald-500" />
-              สัดส่วนจริง (Actual)
+              สัดส่วนจริง Actual
             </h3>
           </div>
           <p className="text-xs text-slate-400 font-medium mb-6">กระจายตามประเภทแผนการลงทุน</p>
@@ -486,7 +542,7 @@ export const MyPortfolio: React.FC<MyPortfolioProps> = ({ latestData, allFunds, 
           <div className="flex items-center justify-between mb-2">
             <h3 className="font-bold text-slate-800 dark:text-white flex items-center gap-2">
               <Settings2 className="w-5 h-5 text-indigo-500" />
-              สัดส่วนเป้าหมาย (Plan)
+              สัดส่วนเป้าหมาย Plan
             </h3>
           </div>
           <p className="text-xs text-slate-400 font-medium mb-6">แบ่งตามการตั้งค่าแผนการลงทุนที่เลือก</p>
@@ -646,7 +702,7 @@ export const MyPortfolio: React.FC<MyPortfolioProps> = ({ latestData, allFunds, 
               
               <div className="space-y-5">
                 <div>
-                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-3 block ml-1">เงินเดือนพื้นฐาน (Monthly Salary)</label>
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-3 block ml-1">เงินเดือนพื้นฐาน Monthly Salary</label>
                   <div className="relative">
                     <input 
                       type="number"
@@ -662,7 +718,7 @@ export const MyPortfolio: React.FC<MyPortfolioProps> = ({ latestData, allFunds, 
 
                 <div className="grid grid-cols-1 gap-4">
                   <div>
-                    <label className="text-[10px] font-black text-state-400 uppercase tracking-[0.2em] mb-3 block ml-1">สัดส่วนออมเพิ่ม (Voluntary %)</label>
+                    <label className="text-[10px] font-black text-state-400 uppercase tracking-[0.2em] mb-3 block ml-1">สัดส่วนออมเพิ่ม Voluntary %</label>
                     <div className="relative group">
                       <select 
                         value={salarySettings.voluntaryPercent}
@@ -709,25 +765,35 @@ export const MyPortfolio: React.FC<MyPortfolioProps> = ({ latestData, allFunds, 
                 {/* Target Allocation Section */}
                 <div className="pt-4 border-t border-slate-100 dark:border-slate-800">
                   <div className="flex justify-between items-center mb-4">
-                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block">สัดส่วนแผนที่เลือก (%)</label>
-                    <span className={clsx("text-[10px] font-black px-2 py-0.5 rounded-full", hasAllocationError ? "bg-red-100 text-red-600" : "bg-emerald-100 text-emerald-600")}>
-                      Total: {allocationTotal}%
-                      {hasAllocationError && " (ต้องครบ 100%)"}
+                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block">สัดส่วนแผนที่เลือก %</label>
+                    <span className={clsx("text-[10px] font-black px-2 py-0.5 rounded-full", hasTempAllocationError ? "bg-red-100 text-red-600" : "bg-emerald-100 text-emerald-600")}>
+                      Total: {tempAllocationTotal}%
+                      {hasTempAllocationError && " ต้องครบ 100%"}
                     </span>
                   </div>
 
-                  {hasGoldLimitError && (
+                  {/* Allocation Warning for Sum Check */}
+                  {tempAllocationTotal > 100 && (
                     <div className="mb-4 p-3 bg-red-50 dark:bg-red-900/20 border border-red-100 dark:border-red-800 rounded-xl flex gap-2 items-start">
-                      <Info className="w-4 h-4 text-red-600 shrink-0 mt-0.5" />
-                      <p className="text-[10px] text-red-700 dark:text-red-400 leading-tight">
-                        คำเตือน: กองทุนทองคำไม่สามารถลงทุนเกิน 20% ของพอร์ตได้ตามเงื่อนไข กบข.
+                      <TrendingUp className="w-4 h-4 text-red-600 shrink-0 mt-0.5" />
+                      <p className="text-[10px] text-red-700 dark:text-red-400 leading-tight font-bold">
+                        สัดส่วนรวมเกิน 100% (เกิน {tempAllocationTotal - 100}%) กรุณาลดสัดส่วนบางกองทุนลง
+                      </p>
+                    </div>
+                  )}
+
+                  {hasTempGoldLimitError && (
+                    <div className="mb-4 p-3 bg-amber-50 dark:bg-amber-900/20 border border-amber-100 dark:border-amber-800 rounded-xl flex gap-2 items-start">
+                      <Info className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                      <p className="text-[10px] text-amber-700 dark:text-amber-400 leading-tight">
+                        คำเตือน: กองทุนทองคำไม่ควรเกิน 20% ตามเงื่อนไข กบข.
                       </p>
                     </div>
                   )}
 
                   <div className="space-y-3 max-h-[200px] overflow-y-auto pr-2 no-scrollbar">
                     {allFunds.map(fund => {
-                      const currentVal = salarySettings.targetAllocations[fund] || 0;
+                      const currentVal = tempAllocations[fund] || 0;
                       return (
                         <div key={fund} className="flex items-center gap-3">
                           <span className="flex-1 text-[11px] font-bold text-slate-600 dark:text-slate-300 truncate">{fund}</span>
@@ -740,9 +806,9 @@ export const MyPortfolio: React.FC<MyPortfolioProps> = ({ latestData, allFunds, 
                               value={currentVal}
                               onChange={(e) => {
                                 const val = Number(e.target.value);
-                                setSalarySettings({
-                                  ...salarySettings,
-                                  targetAllocations: { ...salarySettings.targetAllocations, [fund]: val }
+                                setTempAllocations({
+                                  ...tempAllocations,
+                                  [fund]: val
                                 });
                               }}
                               className="w-24 accent-emerald-600"
@@ -775,17 +841,22 @@ export const MyPortfolio: React.FC<MyPortfolioProps> = ({ latestData, allFunds, 
 
                 <div className="pt-6">
                   <button 
-                    disabled={hasAllocationError}
+                    disabled={hasTempAllocationError}
                     onClick={() => {
                       const val = parseFloat(tempSalary);
                       if (!isNaN(val) && val >= 0) {
-                        setSalarySettings(prev => ({...prev, baseSalary: val}));
+                        setSalarySettings(prev => ({
+                          ...prev, 
+                          baseSalary: val,
+                          targetAllocations: tempAllocations,
+                          voluntaryPercent: tempVoluntary
+                        }));
                       }
                       setIsConfiguringSalary(false);
                     }}
                     className={clsx(
                       "w-full py-5 rounded-3xl font-black shadow-xl active:scale-95 transition-all text-sm uppercase tracking-widest",
-                      hasAllocationError ? "bg-slate-100 text-slate-400 cursor-not-allowed border border-slate-200" : "bg-emerald-600 hover:bg-emerald-700 text-white shadow-emerald-500/30"
+                      hasTempAllocationError ? "bg-slate-100 text-slate-400 cursor-not-allowed border border-slate-200" : "bg-emerald-600 hover:bg-emerald-700 text-white shadow-emerald-500/30"
                     )}
                   >
                     บันทึกและคำนวณใหม่
@@ -809,7 +880,7 @@ export const MyPortfolio: React.FC<MyPortfolioProps> = ({ latestData, allFunds, 
               initial={{ y: "100%" }} animate={{ y: 0 }} exit={{ y: "100%" }}
               className="bg-white dark:bg-slate-900 w-full max-w-md rounded-t-[32px] sm:rounded-3xl p-8 relative z-10"
             >
-              <h3 className="text-xl font-bold text-slate-800 dark:text-white mb-6">บันทึกยอดหน่วย (Units)</h3>
+              <h3 className="text-xl font-bold text-slate-800 dark:text-white mb-6">บันทึกยอดหน่วย Units</h3>
               
               <div className="space-y-5">
                 <div>
@@ -819,12 +890,16 @@ export const MyPortfolio: React.FC<MyPortfolioProps> = ({ latestData, allFunds, 
                     onChange={(e) => setNewFund(e.target.value)}
                     className="w-full bg-slate-50 dark:bg-slate-800 p-4 rounded-2xl font-bold text-slate-800 dark:text-white outline-none ring-1 ring-slate-200 dark:ring-slate-800"
                   >
-                    {allFunds.map(f => <option key={f} value={f}>{f}</option>)}
+                    {activeTargetFunds.length > 0 ? (
+                      activeTargetFunds.map(f => <option key={f} value={f}>{f}</option>)
+                    ) : (
+                      <option disabled value="">กรุณาเลือกแผนในหน้าตั้งค่าก่อน</option>
+                    )}
                   </select>
                 </div>
 
                 <div>
-                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 block">จำนวนหน่วยสะสม (จากแอป My GPF)</label>
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 block">จำนวนหน่วยสะสม จากแอป My GPF</label>
                   <input 
                     type="number"
                     placeholder="0.0000"
