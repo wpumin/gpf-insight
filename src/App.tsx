@@ -29,7 +29,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import clsx from 'clsx';
 import { format, parseISO, subYears } from 'date-fns';
 import { th } from 'date-fns/locale';
-import { BrowserRouter, Routes, Route, Link, useLocation } from 'react-router-dom';
+import { HashRouter, Routes, Route, Link, useLocation } from 'react-router-dom';
 import { doc, onSnapshot, collection, query, orderBy } from 'firebase/firestore';
 import { db } from './firebase';
 
@@ -268,7 +268,7 @@ function AppContent() {
   };
 
   return (
-    <BrowserRouter>
+    <HashRouter>
       <div className={clsx(
         "min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 transition-colors duration-200",
         "pt-20 xl:pt-16 pb-20 xl:pb-8"
@@ -315,7 +315,7 @@ function AppContent() {
 
         <MobileBottomNav />
       </div>
-    </BrowserRouter>
+    </HashRouter>
   );
 }
 
