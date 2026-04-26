@@ -174,51 +174,71 @@ async function processDataAndSaveToFirestore(jsonArray: any[]) {
 }
 
 export async function syncFNG() {
-    console.log("[Sync] Syncing Fear & Greed Index (CNN Markets)...");
+    console.log("[Sync] Syncing Fear & Greed Index...");
     try {
         let score: number | null = null;
-        let source = 'CNN Business (Stocks)';
+        let source = 'CNN Business';
 
-        try {
-            // Try scraping CNN HTML
-            const res = await axios.get('https://edition.cnn.com/markets/fear-and-greed', {
-                headers: {
-                    'User-Agent': 'Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)',
-                    'Accept': 'text/html',
-                    'Referer': 'https://www.google.com/'
-                },
-                timeout: 15000
-            });
-            
-            // Look for the "Now" value in the HTML
-            // CNN uses a JSON state in a script tag sometimes, or just text.
-            // Pattern for the score in scripts: "score":68.0
-            const match = res.data.match(/"score":\s*(\d+(\.\d+)?)/);
-            if (match && match[1]) {
-                score = Math.round(parseFloat(match[1]));
-                console.log(`[Sync] Found FNG score in JSON state: ${score}`);
-            } else {
-                // Secondary check for text pattern like "Fear & Greed Index is at 68"
-                const textMatch = res.data.match(/Fear & Greed Index is at (\d+)/i);
-                if (textMatch && textMatch[1]) {
-                    score = parseInt(textMatch[1]);
-                    console.log(`[Sync] Found FNG score in text: ${score}`);
+        const headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+        };
+
+        const sources = [
+            'https://edition.cnn.com/markets/fear-and-greed',
+            'https://feargreedmeter.com/'
+        ];
+
+        for (const url of sources) {
+            try {
+                console.log(`[Sync] Attempting to scrape: ${url}`);
+                const res = await axios.get(url, { headers, timeout: 10000 });
+                
+                // CNN Source
+                if (url.includes('cnn')) {
+                    const match = res.data.match(/"score":\s*(\d+(\.\d+)?)/) || res.data.match(/Index is at (\d+)/i);
+                    if (match && match[1]) {
+                        score = Math.round(parseFloat(match[1]));
+                        source = 'CNN Business';
+                        break;
+                    }
                 }
+                
+                // FearGreedMeter Source
+                if (url.includes('feargreedmeter')) {
+                    // Check for the specific pattern "Fear and Greed Index: 66"
+                    const mainMatch = res.data.match(/Fear and Greed Index:\s*(\d+)/i);
+                    if (mainMatch && mainMatch[1]) {
+                        score = parseInt(mainMatch[1]);
+                        source = 'FearGreedMeter';
+                        break;
+                    }
+                    
+                    // Fallback to searching in body with more context
+                    const bodyMatch = res.data.match(/current-score[^>]*>(\d+)/i) || res.data.match(/"score":\s*(\d+)/);
+                    if (bodyMatch && bodyMatch[1]) {
+                        score = parseInt(bodyMatch[1]);
+                        source = 'FearGreedMeter';
+                        break;
+                    }
+                }
+            } catch (err: any) {
+                 console.log(`[Sync] Source ${url} failed: ${err.message}`);
             }
-        } catch (scrapingError) {
-            console.error("[Sync] FNG Scraping failed:", scrapingError.message);
         }
 
-        // If scraping failed, we use a "smart fallback" but prioritize showing the correct value
-        // The user has informed us the current value is 66.
+        // Final fallback: Use last known value from DB if all scraping fails
         if (score === null || isNaN(score)) {
-            // Get last value from Firestore
             const fngRef = doc(db, 'market_indices', 'fng');
             const fngSnap = await getDoc(fngRef);
-            
-            // Hard update to 66 to match current market reality requested by user
-            score = 66; 
-            console.log(`[Sync] Scraping failed, using verified value: ${score}`);
+            if (fngSnap.exists()) {
+                const data = fngSnap.data();
+                score = data.value;
+                console.log(`[Sync] Scraping failed, using last known value: ${score}`);
+            } else {
+                score = 66; // Fallback to a reasonable default
+                console.log(`[Sync] All fail, using default value: ${score}`);
+            }
         }
 
         if (score !== null && !isNaN(score)) {

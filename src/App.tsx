@@ -197,23 +197,27 @@ function AppContent() {
     setSelectedFunds(prev => prev.includes(fund) ? prev.filter(f => f !== fund) : [...prev, fund]);
   };
 
-  const formattedData = useMemo(() => data.map(item => {
-    const newItem: any = { ...item, displayDate: formatThaiDate(item.date) };
-    
-    // Ensure both UNIT_COSTx and human names are correctly handled
-    Object.entries(FUNDS_MAP).forEach(([key, name]) => {
-      // If the data has the raw key (UNIT_COSTx), map it to the human name
-      if (item[key] !== undefined && item[key] !== null) {
-        newItem[name] = Number(item[key]);
-      }
-      // If the data ALREADY has the human name (mapped by scraper), use it
-      if (item[name] !== undefined && item[name] !== null) {
-        newItem[name] = Number(item[name]);
-      }
+  const formattedData = useMemo(() => {
+    // Filter to start from Sep 2022 (2565) as requested
+    const filteredRaw = data.filter(item => item.date >= '2022-09-01');
+    return filteredRaw.map(item => {
+      const newItem: any = { ...item, displayDate: formatThaiDate(item.date) };
+      
+      // Ensure both UNIT_COSTx and human names are correctly handled
+      Object.entries(FUNDS_MAP).forEach(([key, name]) => {
+        // If the data has the raw key (UNIT_COSTx), map it to the human name
+        if (item[key] !== undefined && item[key] !== null) {
+          newItem[name] = Number(item[key]);
+        }
+        // If the data ALREADY has the human name (mapped by scraper), use it
+        if (item[name] !== undefined && item[name] !== null) {
+          newItem[name] = Number(item[name]);
+        }
+      });
+      
+      return newItem;
     });
-    
-    return newItem;
-  }), [data]);
+  }, [data]);
   const latestData = formattedData[formattedData.length - 1];
   const previousData = formattedData[formattedData.length - 2];
 
@@ -335,7 +339,7 @@ const formatThaiDate = (dateStr: string) => {
     const date = parseISO(dateStr);
     const day = format(date, 'd');
     const month = format(date, 'MMM', { locale: th });
-    const year = parseInt(format(date, 'yyyy')) + 543;
+    const year = (parseInt(format(date, 'yyyy')) + 543).toString().slice(-2);
     return `${day} ${month} ${year}`;
   } catch {
     return dateStr;
@@ -618,11 +622,11 @@ const DesktopHeader = ({ theme, setTheme, latestData, formatThaiDate }: any) => 
 
           <Link to="/portfolio" className={clsx(
             "flex-1 flex flex-col items-center gap-1.5 py-3 transition-colors relative z-10",
-            pathname === '/portfolio' ? "text-emerald-600 dark:text-emerald-400" : "text-slate-400 hover:text-slate-600 dark:hover:text-slate-300"
+            pathname === '/portfolio' || pathname === '/profile' ? "text-emerald-600 dark:text-emerald-400" : "text-slate-400 hover:text-slate-600 dark:hover:text-slate-300"
           )}>
             <Wallet className="w-5 h-5" />
             <span className="text-[10px] font-black uppercase tracking-tighter">พอร์ต</span>
-            {pathname === '/portfolio' && (
+            {(pathname === '/portfolio' || pathname === '/profile') && (
               <motion.div 
                 layoutId="active-pill"
                 className="absolute inset-x-1 inset-y-1 bg-emerald-50 dark:bg-emerald-500/10 rounded-[1.8rem] -z-10"

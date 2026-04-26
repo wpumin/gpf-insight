@@ -22,7 +22,7 @@ const formatThaiDateTime = (dateStr: string) => {
     const date = parseISO(dateStr);
     const day = format(date, 'd');
     const month = format(date, 'MMM', { locale: th });
-    const year = parseInt(format(date, 'yyyy')) + 543;
+    const year = (parseInt(format(date, 'yyyy')) + 543).toString().slice(-2);
     const time = format(date, 'HH:mm');
     return `${day} ${month} ${year} ${time} น.`;
   } catch {

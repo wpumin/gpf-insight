@@ -20,6 +20,13 @@ interface PortfolioItem {
   units: number;
 }
 
+interface ComparisonStrategy {
+  id: string;
+  name: string;
+  color: string;
+  allocations: Record<string, number>;
+}
+
 interface SalarySettings {
   baseSalary: number;
   contributionPercent: number; // 3% mandatory
@@ -28,6 +35,7 @@ interface SalarySettings {
   paymentCycle: 'monthly' | 'biweekly';
   isAutoEnabled: boolean;
   targetAllocations: Record<string, number>; // fundName -> percentage (total must be 100%)
+  startDate: string; // YYYY-MM-DD
 }
 
 interface MyPortfolioProps {
@@ -79,7 +87,18 @@ const getPayrollDates = (year: number, month: number, paymentCycle: 'monthly' | 
 export const MyPortfolio: React.FC<MyPortfolioProps> = ({ historyData, latestData, allFunds, theme }) => {
   const { user, signInWithGoogle } = useAuth();
   
-  const [portfolioTimeFilter, setPortfolioTimeFilter] = useState<'1M' | '3M' | '6M' | '1Y' | 'MAX'>('MAX');
+  const [portfolioTimeFilter, setPortfolioTimeFilter] = useState<'1M' | '3M' | '6M' | '1Y' | '3Y' | '5Y' | 'MAX'>('MAX');
+  const [activeBenchmarks, setActiveBenchmarks] = useState<string[]>([]);
+  
+  const [customStrategies, setCustomStrategies] = useState<ComparisonStrategy[]>([
+    { id: 'Steady', name: 'แผนพื้นฐาน (100%)', color: '#6366f1', allocations: { "แผนลงทุนพื้นฐานทั่วไป": 100 } },
+    { id: 'Growth', name: 'ตราสารทุนโลก (100%)', color: '#8b5cf6', allocations: { "แผนตราสารทุนต่างประเทศ": 100 } },
+    { id: 'Gold', name: 'ทองคำ (100%)', color: '#f59e0b', allocations: { "แผนทองคำ": 100 } },
+  ]);
+  const [isCreatingStrategy, setIsCreatingStrategy] = useState(false);
+  const [strategyBeingEdited, setStrategyBeingEdited] = useState<ComparisonStrategy | null>(null);
+  const [newStrategyAllocations, setNewStrategyAllocations] = useState<Record<string, number>>({});
+  const [newStrategyName, setNewStrategyName] = useState('');
   
   const [items, setItems] = useState<PortfolioItem[]>([]);
   const [salarySettings, setSalarySettings] = useState<SalarySettings>({
@@ -89,7 +108,8 @@ export const MyPortfolio: React.FC<MyPortfolioProps> = ({ historyData, latestDat
     stateContributionPercent: 3, // Fixed
     paymentCycle: 'monthly',
     isAutoEnabled: false,
-    targetAllocations: { "แผนลงทุนพื้นฐานทั่วไป": 100 }
+    targetAllocations: { "แผนลงทุนพื้นฐานทั่วไป": 100 },
+    startDate: '2022-09-01'
   });
 
   const [loading, setLoading] = useState(true);
@@ -132,20 +152,28 @@ export const MyPortfolio: React.FC<MyPortfolioProps> = ({ historyData, latestDat
             setSalarySettings(prev => ({ ...prev, ...data.salarySettings }));
             localStorage.setItem('gpf_salary_settings', JSON.stringify(data.salarySettings));
           }
+          if (data.customStrategies) {
+            setCustomStrategies(data.customStrategies);
+            localStorage.setItem('gpf_custom_strategies', JSON.stringify(data.customStrategies));
+          }
         } else {
           // If no doc yet, check local storage
           const savedP = localStorage.getItem('gpf_portfolio');
           const savedS = localStorage.getItem('gpf_salary_settings');
+          const savedC = localStorage.getItem('gpf_custom_strategies');
           if (savedP) setItems(JSON.parse(savedP));
           if (savedS) setSalarySettings(prev => ({ ...prev, ...JSON.parse(savedS) }));
+          if (savedC) setCustomStrategies(JSON.parse(savedC));
         }
       } catch (err) {
         console.error("Firestore fetch error:", err);
         // Fallback to localStorage
         const savedP = localStorage.getItem('gpf_portfolio');
         const savedS = localStorage.getItem('gpf_salary_settings');
+        const savedC = localStorage.getItem('gpf_custom_strategies');
         if (savedP) setItems(JSON.parse(savedP));
         if (savedS) setSalarySettings(prev => ({ ...prev, ...JSON.parse(savedS) }));
+        if (savedC) setCustomStrategies(JSON.parse(savedC));
       } finally {
         setLoading(false);
       }
@@ -165,7 +193,8 @@ export const MyPortfolio: React.FC<MyPortfolioProps> = ({ historyData, latestDat
         try {
           await setDoc(doc(db, 'users', user.uid), { 
             portfolio: items,
-            salarySettings
+            salarySettings,
+            customStrategies
           }, { merge: true });
         } catch (e) {
           console.error("Save failed:", e);
@@ -173,13 +202,14 @@ export const MyPortfolio: React.FC<MyPortfolioProps> = ({ historyData, latestDat
       } else {
         localStorage.setItem('gpf_portfolio', JSON.stringify(items));
         localStorage.setItem('gpf_salary_settings', JSON.stringify(salarySettings));
+        localStorage.setItem('gpf_custom_strategies', JSON.stringify(customStrategies));
       }
     };
 
     // Debounce saves slightly to avoid hitting firestore too hard
     const timeout = setTimeout(saveToFirestore, 1000);
     return () => clearTimeout(timeout);
-  }, [items, salarySettings, user, loading]);
+  }, [items, salarySettings, customStrategies, user, loading]);
 
   const [isAdding, setIsAdding] = useState(false);
   const [isConfiguringSalary, setIsConfiguringSalary] = useState(false);
@@ -296,104 +326,190 @@ export const MyPortfolio: React.FC<MyPortfolioProps> = ({ historyData, latestDat
   }, [items, latestData]);
 
   const portfolioHistory = useMemo(() => {
-    if (!historyData || historyData.length === 0 || items.length === 0) return [];
+    if (!historyData || historyData.length === 0) return [];
     
-    // Sort history by date just in case
     const sortedHistory = [...historyData].sort((a, b) => a.date.localeCompare(b.date));
     
-    // Filter history based on portfolioTimeFilter
-    let filteredHistory = sortedHistory;
+    let cutoffStr = '1900-01-01';
     if (portfolioTimeFilter !== 'MAX') {
       const now = new Date();
       let monthsToSubtract = 1;
       if (portfolioTimeFilter === '3M') monthsToSubtract = 3;
       if (portfolioTimeFilter === '6M') monthsToSubtract = 6;
       if (portfolioTimeFilter === '1Y') monthsToSubtract = 12;
+      if (portfolioTimeFilter === '3Y') monthsToSubtract = 36;
+      if (portfolioTimeFilter === '5Y') monthsToSubtract = 60;
       
       const cutoff = new Date();
       cutoff.setMonth(now.getMonth() - monthsToSubtract);
-      const cutoffStr = cutoff.toISOString().split('T')[0];
-      filteredHistory = sortedHistory.filter(d => d.date >= cutoffStr);
+      cutoffStr = cutoff.toISOString().split('T')[0];
     }
 
-    // Advanced Simulation: Backtracking units accumulated from payroll
-    // We start from current total items and work backwards in time
-    let simulatedItems = [...items].map(i => ({ ...i }));
-    
-    // Reverse the sorted history to process from NEWEST to OLDEST
-    const reverseHistory = [...filteredHistory].reverse();
+    const simulatedItems: PortfolioItem[] = [];
     const simulatedData = [];
 
-    // Helper: Estimate historical salary (approx 2% increase every April and October)
     const estimateHistoricalSalary = (baseSalary: number, dateStr: string) => {
       const date = new Date(dateStr);
       const current = new Date();
-      const currentYear = current.getFullYear();
-      const dateYear = date.getFullYear();
-      
-      const yearsDiff = currentYear - dateYear;
-      const monthsDiff = (currentYear * 12 + current.getMonth()) - (dateYear * 12 + date.getMonth());
-      
-      // Every 6 months, assume approx 2.5% increment
-      const incrementCount = Math.floor(monthsDiff / 6);
-      return baseSalary / Math.pow(1.025, incrementCount);
+      const monthsDiff = (current.getFullYear() * 12 + current.getMonth()) - (date.getFullYear() * 12 + date.getMonth());
+      return baseSalary / Math.pow(1.025, Math.floor(monthsDiff / 6));
     };
 
-    let prevMonth = -1;
+    let pPrevMonth = -1;
+    const simulationStart = salarySettings.startDate || '2022-09-01';
     
-    for (const day of reverseHistory) {
+    for (const day of sortedHistory) {
+      if (day.date < simulationStart) continue;
+
       const date = new Date(day.date);
       const month = date.getMonth();
       const year = date.getFullYear();
-      const bkkDateStr = `${year}-${month + 1}-${date.getDate()}`;
+      const currentDayStr = `${year}-${month + 1}-${date.getDate()}`;
       
-      // If we crossed a payroll date, subtract the units that WOULD have been added on that day
-      // (This is a simplified back-accumulation)
       const payrollDates = getPayrollDates(year, month, salarySettings.paymentCycle);
       
-      if (payrollDates.includes(bkkDateStr) && month !== prevMonth) {
-        prevMonth = month;
+      if (payrollDates.includes(currentDayStr) && month !== pPrevMonth) {
+        pPrevMonth = month;
         
-        // Calculate historical investment amount for this month
         const historicalSalary = estimateHistoricalSalary(salarySettings.baseSalary, day.date);
         const myContrib = historicalSalary * ((salarySettings.voluntaryPercent + 3) / 100);
         const stateContrib = historicalSalary * 0.03;
         const totalInvest = myContrib + stateContrib;
         const perPaycheck = (salarySettings.paymentCycle === 'biweekly') ? totalInvest / 2 : totalInvest;
 
-        // Deduct units based on that day's NAV
         Object.entries(salarySettings.targetAllocations).forEach(([fund, percent]) => {
           const p = percent as number;
           if (p > 0) {
-            const nav = day[fund] || (latestData ? latestData[fund] : 0);
-            if (nav > 0) {
-              const unitsAdded = perPaycheck * (p / 100) / nav;
-              const idx = simulatedItems.findIndex(i => i.fund === fund);
-              if (idx >= 0) {
-                simulatedItems[idx].units = Math.max(0, simulatedItems[idx].units - unitsAdded);
-              }
+            const nav = day[fund] || 1;
+            const unitsAdded = perPaycheck * (p / 100) / nav;
+            const existingIdx = simulatedItems.findIndex(i => i.fund === fund);
+            if (existingIdx >= 0) {
+              simulatedItems[existingIdx].units += unitsAdded;
+            } else {
+              simulatedItems.push({ fund, units: unitsAdded });
             }
           }
         });
       }
 
-      // Calculate portfolio value for this simulated point in time
-      let dailyValue = 0;
-      simulatedItems.forEach(item => {
-        const nav = day[item.fund] || 0;
-        dailyValue += nav * item.units;
-      });
+      if (day.date >= cutoffStr) {
+        let dailyValue = 0;
+        simulatedItems.forEach(item => {
+          const nav = day[item.fund] || 0;
+          dailyValue += nav * item.units;
+        });
 
-      simulatedData.push({
-        date: day.date,
-        displayDate: day.displayDate || day.date,
-        value: dailyValue,
-      });
+        simulatedData.push({
+          date: day.date,
+          displayDate: day.displayDate || day.date,
+          value: dailyValue,
+        });
+      }
     }
 
-    // Return to original chronological order for the chart
-    return simulatedData.reverse().filter(d => d.value > 0);
-  }, [historyData, items, portfolioTimeFilter, salarySettings, latestData]);
+    return simulatedData;
+  }, [historyData, portfolioTimeFilter, salarySettings]);
+
+  const benchmarkHistory = useMemo(() => {
+    if (!historyData || historyData.length === 0 || activeBenchmarks.length === 0) return {};
+    
+    const sortedHistory = [...historyData].sort((a, b) => a.date.localeCompare(b.date));
+    let cutoffStr = '1900-01-01';
+    if (portfolioTimeFilter !== 'MAX') {
+      const now = new Date();
+      let m = 1;
+      if (portfolioTimeFilter === '3M') m = 3;
+      if (portfolioTimeFilter === '6M') m = 6;
+      if (portfolioTimeFilter === '1Y') m = 12;
+      if (portfolioTimeFilter === '3Y') m = 36;
+      if (portfolioTimeFilter === '5Y') m = 60;
+      const cutoff = new Date();
+      cutoff.setMonth(now.getMonth() - m);
+      cutoffStr = cutoff.toISOString().split('T')[0];
+    }
+
+    const benchmarks: Record<string, any[]> = {};
+    const simulationStart = salarySettings.startDate || '2022-09-01';
+    
+    activeBenchmarks.forEach(strategyId => {
+      const strategy = customStrategies.find(s => s.id === strategyId);
+      if (!strategy) return;
+
+      const data: any[] = [];
+      const strategyUnits: Record<string, number> = {};
+      let bPrevMonth = -1;
+
+      for (const day of sortedHistory) {
+         if (day.date < simulationStart) continue;
+
+         const date = new Date(day.date);
+         const month = date.getMonth();
+         const year = date.getFullYear();
+         const currentDayStr = `${year}-${month + 1}-${date.getDate()}`;
+         
+         const payrollDates = getPayrollDates(year, month, salarySettings.paymentCycle);
+         if (payrollDates.includes(currentDayStr) && month !== bPrevMonth) {
+           bPrevMonth = month;
+           
+           const dateObj = new Date(day.date);
+           const current = new Date();
+           const monthsDiff = (current.getFullYear() * 12 + current.getMonth()) - (dateObj.getFullYear() * 12 + dateObj.getMonth());
+           const historicalSalary = salarySettings.baseSalary / Math.pow(1.025, Math.floor(monthsDiff / 6));
+           const totalInvest = historicalSalary * ((salarySettings.voluntaryPercent + 6) / 100);
+           const perPay = (salarySettings.paymentCycle === 'biweekly') ? totalInvest / 2 : totalInvest;
+           
+           Object.entries(strategy.allocations).forEach(([fund, percent]) => {
+             if (percent > 0) {
+               const nav = day[fund] || 1;
+               strategyUnits[fund] = (strategyUnits[fund] || 0) + (perPay * (percent / 100) / nav);
+             }
+           });
+         }
+         
+         if (day.date >= cutoffStr) {
+           let dayTotalVal = 0;
+           Object.entries(strategyUnits).forEach(([fund, units]) => {
+              dayTotalVal += units * (day[fund] || 0);
+           });
+
+           benchmarks[strategyId] = benchmarks[strategyId] || [];
+           benchmarks[strategyId].push({
+             date: day.date,
+             value: dayTotalVal
+           });
+         }
+      }
+    });
+
+    return benchmarks;
+  }, [historyData, portfolioTimeFilter, salarySettings, activeBenchmarks, customStrategies]);
+
+  const combinedChartData = useMemo(() => {
+    if (portfolioHistory.length === 0) return [];
+    
+    // Create a map of dates for faster lookup
+    const benchmarkMap: Record<string, Record<string, number>> = {};
+    activeBenchmarks.forEach(benchId => {
+      const benchData = benchmarkHistory[benchId] || [];
+      benchmarkMap[benchId] = {};
+      benchData.forEach(d => {
+        benchmarkMap[benchId][d.date] = d.value;
+      });
+    });
+
+    return portfolioHistory.map(d => {
+      const entry: any = { ...d };
+      activeBenchmarks.forEach(benchId => {
+        if (benchmarkMap[benchId] && benchmarkMap[benchId][d.date] !== undefined) {
+          entry[benchId] = benchmarkMap[benchId][d.date];
+        } else {
+          // If benchmark doesn't have data for this date, maybe fallback or leave undefined
+          // Recharts handles missing values as gaps.
+        }
+      });
+      return entry;
+    });
+  }, [portfolioHistory, benchmarkHistory, activeBenchmarks]);
 
   const simulationStats = useMemo(() => {
     if (portfolioHistory.length < 2) return { change: 0, changePercent: 0, isUp: true };
@@ -656,22 +772,22 @@ export const MyPortfolio: React.FC<MyPortfolioProps> = ({ historyData, latestDat
 
       {/* --- Portfolio Performance Chart --- */}
       <section className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-[32px] p-6 sm:p-8 shadow-sm">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-4">
           <div>
             <h3 className="font-black text-slate-800 dark:text-white text-lg flex items-center gap-2">
               <Sparkles className="w-5 h-5 text-emerald-500" />
-              แบบจำลองการเติบโต
+              GPF Strategy Lab
             </h3>
-            <p className="text-xs text-slate-400 font-bold uppercase tracking-widest mt-1">Simulated Growth (Estimated)</p>
+            <p className="text-xs text-slate-400 font-bold uppercase tracking-widest mt-1">แบบจำลองและเปรียบเทียบกลยุทธ์</p>
           </div>
           
           <div className="flex bg-slate-100 dark:bg-slate-800 p-1 rounded-xl">
-            {(['1M', '3M', '6M', '1Y', 'MAX'] as const).map((f) => (
+            {(['1M', '3M', '6M', '1Y', '3Y', '5Y', 'MAX'] as const).map((f) => (
               <button
                 key={f}
                 onClick={() => setPortfolioTimeFilter(f)}
                 className={clsx(
-                  "px-3 py-1.5 text-[10px] font-black rounded-lg transition-all",
+                  "px-2 py-1.5 text-[9px] font-black rounded-lg transition-all",
                   portfolioTimeFilter === f 
                     ? "bg-white dark:bg-slate-700 text-emerald-600 dark:text-emerald-400 shadow-sm" 
                     : "text-slate-400 hover:text-slate-600 dark:hover:text-slate-300"
@@ -683,60 +799,215 @@ export const MyPortfolio: React.FC<MyPortfolioProps> = ({ historyData, latestDat
           </div>
         </div>
 
+        {/* Benchmark Toggles */}
+        <div className="flex flex-wrap items-center gap-3 mb-8">
+           <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mr-2">เปรียบเทียบกับ:</p>
+           {customStrategies.map(bench => (
+             <div key={bench.id} className="relative group">
+               <button
+                onClick={() => {
+                  setActiveBenchmarks(prev => 
+                    prev.includes(bench.id) ? prev.filter(b => b !== bench.id) : [...prev, bench.id]
+                  );
+                }}
+                className={clsx(
+                  "px-3 py-2 rounded-xl text-[10px] font-bold border transition-all flex items-center gap-2",
+                  activeBenchmarks.includes(bench.id)
+                    ? "bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 shadow-sm"
+                    : "bg-transparent border-transparent text-slate-400"
+                )}
+               >
+                 <div className={clsx("w-2 h-2 rounded-full", activeBenchmarks.includes(bench.id) ? "opacity-100" : "opacity-30")} style={{ backgroundColor: bench.color }} />
+                 {bench.name}
+               </button>
+               
+               {/* Context menu for custom strategies */}
+               {bench.id !== 'Steady' && bench.id !== 'Growth' && bench.id !== 'Gold' && (
+                 <div className="absolute -top-1 -right-1 flex gap-1 scale-0 group-hover:scale-100 transition-transform">
+                   <button 
+                     onClick={(e) => {
+                       e.stopPropagation();
+                       setStrategyBeingEdited(bench);
+                       setNewStrategyName(bench.name);
+                       setNewStrategyAllocations(bench.allocations);
+                       setIsCreatingStrategy(true);
+                     }}
+                     className="p-1 bg-indigo-100 dark:bg-indigo-900/40 text-indigo-600 rounded-full shadow-sm hover:bg-indigo-200 transition-colors"
+                   >
+                     <Edit2 className="w-2.5 h-2.5" />
+                   </button>
+                   <button 
+                     onClick={(e) => {
+                       e.stopPropagation();
+                       setCustomStrategies(prev => prev.filter(s => s.id !== bench.id));
+                       setActiveBenchmarks(prev => prev.filter(id => id !== bench.id));
+                     }}
+                     className="p-1 bg-red-100 dark:bg-red-900/40 text-red-600 rounded-full shadow-sm hover:bg-red-200 transition-colors"
+                   >
+                     <Trash2 className="w-2.5 h-2.5" />
+                   </button>
+                 </div>
+               )}
+             </div>
+           ))}
+           {customStrategies.length < 6 && ( // 3 default + 3 custom
+             <button 
+               onClick={() => {
+                 setNewStrategyName('');
+                 setNewStrategyAllocations({});
+                 setStrategyBeingEdited(null);
+                 setIsCreatingStrategy(true);
+               }}
+               className="px-3 py-2 rounded-xl text-[10px] font-black border border-emerald-200 dark:border-emerald-800 text-emerald-600 dark:text-emerald-400 flex items-center gap-2 hover:bg-emerald-50 dark:hover:bg-emerald-900/10 transition-all border-dashed"
+             >
+               <Plus className="w-3 h-3" />
+               สร้างพอร์ตเปรียบเทียบเอง ({customStrategies.length - 3}/3)
+             </button>
+           )}
+        </div>
+
         {portfolioHistory.length > 0 ? (
           <div className="space-y-6">
-            <div className="flex items-baseline gap-3 mb-2">
-              <p className="text-3xl font-black text-slate-800 dark:text-white tracking-tight">
-                ฿{portfolioValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-              </p>
-              <div className={clsx(
-                "flex items-center gap-1 text-sm font-bold",
-                simulationStats.isUp ? "text-emerald-500" : "text-red-500"
-              )}>
-                {simulationStats.isUp ? <TrendingUp className="w-4 h-4" /> : <TrendingDown className="w-4 h-4" />}
-                {simulationStats.isUp ? '+' : ''}{simulationStats.changePercent.toFixed(2)}%
-                <span className="text-slate-400 text-[10px] font-medium ml-1">({portfolioTimeFilter})</span>
+            <div className="flex flex-wrap items-baseline gap-6 mb-2">
+              <div>
+                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">พอร์ตปัจจุบันของคุณ</p>
+                <div className="flex items-baseline gap-2">
+                  <p className="text-3xl font-black text-slate-800 dark:text-white tracking-tight">
+                    ฿{portfolioValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </p>
+                  <div className={clsx(
+                    "flex items-center gap-1 text-sm font-bold",
+                    simulationStats.isUp ? "text-emerald-500" : "text-red-500"
+                  )}>
+                    {simulationStats.isUp ? <TrendingUp className="w-4 h-4" /> : <TrendingDown className="w-4 h-4" />}
+                    {simulationStats.isUp ? '+' : ''}{simulationStats.changePercent.toFixed(2)}%
+                  </div>
+                </div>
               </div>
+
+              {activeBenchmarks.map(strategyId => {
+                const strat = customStrategies.find(s => s.id === strategyId);
+                const data = benchmarkHistory[strategyId];
+                if (!data || !strat) return null;
+                const last = data[data.length - 1].value;
+                const first = data[0].value;
+                const change = ((last - first) / (first || 1)) * 100;
+                
+                return (
+                  <div key={strategyId} className="border-l border-slate-100 dark:border-slate-800 pl-6">
+                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">{strat.name}</p>
+                    <div className="flex items-baseline gap-2">
+                      <p className="text-lg font-black" style={{ color: strat.color }}>
+                        ฿{last.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                      </p>
+                      <p className={clsx("text-xs font-bold", change >= 0 ? "text-emerald-500" : "text-red-500")}>
+                        {change >= 0 ? '+' : ''}{change.toFixed(1)}%
+                      </p>
+                    </div>
+                  </div>
+                );
+              })}
             </div>
 
-            <div className="h-[300px] w-full">
+            <div className="h-[340px] w-full">
               <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={portfolioHistory}>
+                <AreaChart data={combinedChartData}>
                   <defs>
                     <linearGradient id="colorSimulation" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#10b981" stopOpacity={0.3}/>
+                      <stop offset="5%" stopColor="#10b981" stopOpacity={0.2}/>
                       <stop offset="95%" stopColor="#10b981" stopOpacity={0}/>
                     </linearGradient>
                   </defs>
                   <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={theme === 'dark' ? '#1e293b' : '#f1f5f9'} />
                   <XAxis dataKey="displayDate" hide />
-                  <YAxis hide domain={['dataMin * 0.95', 'dataMax * 1.05']} />
+                  <YAxis hide domain={['dataMin * 0.9', 'dataMax * 1.1']} />
                   <ReTooltip
                     content={({ active, payload }) => {
                       if (active && payload && payload.length) {
-                        const d = payload[0].payload;
                         return (
-                          <div className="bg-white dark:bg-slate-800 p-4 rounded-2xl shadow-2xl border border-slate-100 dark:border-slate-700">
-                            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">{d.displayDate}</p>
-                            <p className="text-lg font-black text-emerald-600 dark:text-emerald-400">
-                              ฿{d.value.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                          <div className="bg-white dark:bg-slate-800 p-4 rounded-2xl shadow-2xl border border-slate-100 dark:border-slate-700 min-w-[200px]">
+                            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3 border-b border-slate-100 dark:border-slate-700 pb-2">
+                              {payload[0].payload.displayDate}
                             </p>
-                            <p className="text-[10px] text-slate-400 font-medium">ยอดออมจำลอง (ณ วันที่ {d.date})</p>
+                            <div className="space-y-2">
+                              {payload.map((p: any) => {
+                                const isUser = p.dataKey === 'value';
+                                const strat = isUser ? null : customStrategies.find(s => s.id === p.dataKey);
+                                const label = isUser ? 'พอร์ตของคุณ' : (strat?.name || p.dataKey);
+                                const color = isUser ? '#10b981' : (strat?.color || '#94a3b8');
+                                
+                                return (
+                                  <div key={p.dataKey} className="flex justify-between items-center gap-4">
+                                    <div className="flex items-center gap-2">
+                                      <div className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: color }} />
+                                      <span className="text-[10px] font-bold text-slate-400">{label}</span>
+                                    </div>
+                                    <span className="text-sm font-black" style={{ color }}>฿{p.value.toLocaleString()}</span>
+                                  </div>
+                                );
+                              })}
+                            </div>
                           </div>
                         );
                       }
                       return null;
                     }}
                   />
-                  <Area type="monotone" dataKey="value" stroke="#10b981" strokeWidth={4} fillOpacity={1} fill="url(#colorSimulation)" animationDuration={1500} />
+                  
+                  {/* Custom Strategies */}
+                  {activeBenchmarks.map(stratId => {
+                    const strat = customStrategies.find(s => s.id === stratId);
+                    if (!strat) return null;
+                    return (
+                      <Area 
+                        key={stratId}
+                        type="monotone" 
+                        dataKey={stratId} 
+                        stroke={strat.color} 
+                        strokeWidth={2} 
+                        fill="transparent" 
+                        animationDuration={1000} 
+                        strokeDasharray="5 5"
+                      />
+                    );
+                  })}
+
+                  {/* User Portfolio */}
+                  <Area 
+                    type="monotone" 
+                    dataKey="value" 
+                    stroke="#10b981" 
+                    strokeWidth={4} 
+                    fillOpacity={1} 
+                    fill="url(#colorSimulation)" 
+                    animationDuration={1500} 
+                  />
                 </AreaChart>
               </ResponsiveContainer>
             </div>
             
-            <div className="bg-slate-50 dark:bg-slate-800/30 p-4 rounded-2xl border border-slate-100 dark:border-slate-800/50">
-              <p className="text-[10px] text-slate-400 font-medium italic leading-relaxed">
-                * ระบบกำลังจำลองประวัติการออมของคุณย้อนหลัง โดยคำนวณจาก (1) จำนวนหน่วยปัจจุบันที่คุณถือครอง (2) หักลบเงินออมสะสมรายเดือนย้อนกลับไปในอดีต และ (3) ประมาณการเงินเดือนในอดีตที่ค่อยๆ เพิ่มขึ้นตามรอบ เม.ย./ต.ค.
-              </p>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="bg-slate-50 dark:bg-slate-800/30 p-5 rounded-2xl border border-slate-100 dark:border-slate-800/50">
+                <div className="flex items-center gap-2 mb-2">
+                  <Info className="w-4 h-4 text-emerald-500" />
+                  <p className="text-[10px] font-black text-slate-600 dark:text-slate-300 uppercase tracking-widest">คำอธิบายแบบจำลอง</p>
+                </div>
+                <p className="text-[10px] text-slate-400 font-medium italic leading-relaxed">
+                  แบบจำลองเปรียบเทียบนี้ใช้ "มูลค่าเริ่มต้น ณ วันที่เริ่มกราฟ" เท่ากันทุกตัว และจำลองการออมรายเดือน (DCA) เข้ากองทุนตามสัดส่วนที่ระบุ เพื่อดูว่าสินทรัพย์ประเภทไหนให้ผลตอบแทนสูงสุดในสภาวะตลาดที่ผ่านมา
+                </p>
+              </div>
+
+              <div className="bg-indigo-50 dark:bg-indigo-900/10 p-5 rounded-2xl border border-indigo-100 dark:border-indigo-800/30">
+                <div className="flex items-center gap-2 mb-2">
+                  <Sparkles className="w-4 h-4 text-indigo-500" />
+                  <p className="text-[10px] font-black text-indigo-600 dark:text-indigo-400 uppercase tracking-widest">Strategy Insight</p>
+                </div>
+                <p className="text-xs text-indigo-700 dark:text-indigo-300 font-bold leading-relaxed">
+                  {simulationStats.changePercent > 10 ? 
+                    "พอร์ตของคุณกำลังเติบโตได้ดีในสภาวะตลาดนี้ การรักษาวินัยการออมเป็นหัวใจสำคัญ" :
+                    "การกระจายความเสี่ยง (Allocation) มีผลต่อผลตอบแทนระยะยาว ลองกดเปรียบเทียบกับ 'หุ้นโลก' เพื่อดูโอกาสในการเพิ่มผลตอบแทน"}
+                </p>
+              </div>
             </div>
           </div>
         ) : (
@@ -991,6 +1262,33 @@ export const MyPortfolio: React.FC<MyPortfolioProps> = ({ historyData, latestDat
                   <p className="text-[10px] text-slate-400 font-bold mt-2 ml-1">*กรุณาระบุเงินเดือนเพื่อคำนวณยอดเงินสะสมรายเดือน</p>
                 </div>
 
+                <div>
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-3 block ml-1">เริ่มลงทุนกับ กบข. เมื่อไหร่ Start Date</label>
+                  <div className="relative">
+                    <input 
+                      type="date"
+                      value={salarySettings.startDate}
+                      onChange={(e) => setSalarySettings({...salarySettings, startDate: e.target.value})}
+                      className={clsx(
+                        "w-full bg-slate-50 dark:bg-slate-950 p-5 rounded-3xl text-lg font-bold border-2 border-transparent focus:border-emerald-500 outline-none transition-all",
+                        "opacity-0 absolute inset-0 z-10 cursor-pointer"
+                      )}
+                    />
+                    <div className="w-full bg-slate-50 dark:bg-slate-950 p-5 rounded-3xl text-lg font-bold text-slate-800 dark:text-white border-2 border-slate-100 dark:border-slate-800 flex items-center justify-between">
+                       <span>{salarySettings.startDate ? (() => {
+                         const d = new Date(salarySettings.startDate);
+                         const day = d.getDate();
+                         const months = ["ม.ค.", "ก.พ.", "มี.ค.", "เม.ย.", "พ.ค.", "มิ.ย.", "ก.ค.", "ส.ค.", "ก.ย.", "ต.ค.", "พ.ย.", "ธ.ค."];
+                         const month = months[d.getMonth()];
+                         const year = (d.getFullYear() + 543).toString().slice(-2);
+                         return `${day} ${month} ${year}`;
+                       })() : 'เลือกวันที่'}</span>
+                       <Calendar className="w-5 h-5 text-slate-400" />
+                    </div>
+                  </div>
+                  <p className="text-[10px] text-slate-400 font-bold mt-2 ml-1">*ระบุวันที่เริ่มเป็นสมาชิก กบข. เพื่อให้แบบจำลองเริ่มสะสมจาก 0</p>
+                </div>
+
                 <div className="grid grid-cols-1 gap-4">
                   <div>
                     <label className="text-[10px] font-black text-state-400 uppercase tracking-[0.2em] mb-3 block ml-1">สัดส่วนออมเพิ่ม Voluntary %</label>
@@ -1081,14 +1379,18 @@ export const MyPortfolio: React.FC<MyPortfolioProps> = ({ historyData, latestDat
                             <input 
                               type="range"
                               min="0"
-                              max="100"
+                              max={Math.max(currentVal, 100 - (tempAllocationTotal - currentVal))}
                               step="1"
                               value={currentVal}
                               onChange={(e) => {
                                 const val = Number(e.target.value);
+                                const otherTotal = tempAllocationTotal - currentVal;
+                                const allowed = 100 - otherTotal;
+                                const newVal = Math.min(val, allowed);
+
                                 setTempAllocations({
                                   ...tempAllocations,
-                                  [fund]: val
+                                  [fund]: newVal
                                 });
                               }}
                               className="w-24 accent-emerald-600"
@@ -1212,6 +1514,119 @@ export const MyPortfolio: React.FC<MyPortfolioProps> = ({ historyData, latestDat
       
       {/* --- Delete Confirmation Modal --- */}
       <AnimatePresence>
+        {isCreatingStrategy && (
+          <div className="fixed inset-0 z-[100] flex items-end sm:items-center justify-center p-0 sm:p-4">
+             <motion.div 
+               initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+               onClick={() => setIsCreatingStrategy(false)}
+               className="absolute inset-0 bg-slate-950/70 backdrop-blur-sm"
+             />
+             <motion.div 
+               initial={{ y: "100%" }} animate={{ y: 0 }} exit={{ y: "100%" }}
+               className="bg-white dark:bg-slate-900 w-full max-w-lg rounded-t-[32px] sm:rounded-3xl p-8 relative z-10 max-h-[90vh] overflow-y-auto no-scrollbar"
+             >
+               <h3 className="text-xl font-bold text-slate-800 dark:text-white mb-6 flex items-center gap-2">
+                 <Sparkles className="w-5 h-5 text-emerald-500" />
+                 {strategyBeingEdited ? 'แก้ไขพอร์ตเปรียบเทียบ' : 'สร้างแผนเปรียบเทียบใหม่'}
+               </h3>
+               
+               <div className="space-y-6">
+                 <div>
+                   <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 block">ชื่อแผน</label>
+                   <input 
+                     type="text"
+                     placeholder="เช่น 60/40 Conservative Growth"
+                     className="w-full bg-slate-50 dark:bg-slate-950 p-4 rounded-2xl font-bold border-2 border-transparent focus:border-emerald-500 outline-none transition-all"
+                     value={newStrategyName}
+                     onChange={(e) => setNewStrategyName(e.target.value)}
+                   />
+                 </div>
+
+                 <div>
+                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4 block">ปรับสัดส่วนที่ต้องการจำลอง (%)</label>
+                    <div className="space-y-4 max-h-[300px] overflow-y-auto pr-2 no-scrollbar">
+                      {allFunds.map(fund => {
+                        const val = newStrategyAllocations[fund] || 0;
+                        const otherTotal = Object.entries(newStrategyAllocations).reduce((sum, [f, v]) => f === fund ? sum : sum + v, 0);
+                        const maxAllowed = 100 - otherTotal;
+                        
+                        return (
+                          <div key={fund} className="flex items-center gap-3">
+                            <span className="flex-1 text-[11px] font-bold text-slate-600 dark:text-slate-300 truncate">{fund}</span>
+                            <div className="flex items-center gap-2">
+                              <input 
+                                type="range" min="0" max={Math.max(val, maxAllowed)} step="1"
+                                value={val}
+                                onChange={(e) => {
+                                  let requested = Number(e.target.value);
+                                  // Cap at remaining budget for simpler balancing
+                                  const newVal = Math.min(requested, 100 - otherTotal);
+                                  setNewStrategyAllocations({...newStrategyAllocations, [fund]: newVal});
+                                }}
+                                className="w-24 accent-violet-600"
+                              />
+                              <span className="w-8 text-[11px] font-black text-slate-800 dark:text-white text-right">{val}%</span>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                    
+                    <div className="mt-4 flex items-center justify-between p-4 bg-slate-50 dark:bg-slate-950 rounded-2xl border border-slate-100 dark:border-slate-800">
+                      <span className="text-xs font-bold text-slate-500 uppercase">สัดส่วนรวม:</span>
+                      <span className={clsx(
+                        "text-lg font-black",
+                        Object.values(newStrategyAllocations).reduce((a, b) => a + b, 0) === 100 ? "text-emerald-600" : "text-amber-500"
+                      )}>
+                        {Object.values(newStrategyAllocations).reduce((a, b) => a + b, 0)}%
+                        {Object.values(newStrategyAllocations).reduce((a, b) => a + b, 0) < 100 && <span className="text-[10px] ml-2 font-bold">(ยังไม่ครบ 100%)</span>}
+                      </span>
+                    </div>
+                 </div>
+
+                 <div className="pt-4 flex gap-3">
+                    <button 
+                      onClick={() => setIsCreatingStrategy(false)}
+                      className="flex-1 py-4 px-6 rounded-2xl bg-slate-100 dark:bg-slate-800 text-slate-500 font-bold"
+                    >
+                      ยกเลิก
+                    </button>
+                    <button 
+                      disabled={!newStrategyName || Object.values(newStrategyAllocations).reduce((a, b) => a + b, 0) !== 100}
+                      onClick={() => {
+                        if (strategyBeingEdited) {
+                          setCustomStrategies(prev => prev.map(s => s.id === strategyBeingEdited.id ? {
+                            ...s,
+                            name: newStrategyName,
+                            allocations: newStrategyAllocations
+                          } : s));
+                        } else {
+                          const newStrat: ComparisonStrategy = {
+                            id: `strat-${Date.now()}`,
+                            name: newStrategyName,
+                            color: `hsla(${Math.random() * 360}, 70%, 50%, 1)`,
+                            allocations: newStrategyAllocations
+                          };
+                          setCustomStrategies(prev => [...prev, newStrat]);
+                          setActiveBenchmarks(prev => [...prev, newStrat.id]);
+                        }
+                        setIsCreatingStrategy(false);
+                      }}
+                      className={clsx(
+                        "flex-[2] py-4 px-6 rounded-2xl font-black transition-all shadow-lg active:scale-95 text-white",
+                        !newStrategyName || Object.values(newStrategyAllocations).reduce((a, b) => a + b, 0) !== 100 
+                          ? "bg-slate-200 cursor-not-allowed shadow-none" 
+                          : "bg-emerald-600 shadow-emerald-500/30"
+                      )}
+                    >
+                      {strategyBeingEdited ? 'บันทึกการแก้ไข' : 'สร้างกลยุทธ์จำลอง'}
+                    </button>
+                 </div>
+               </div>
+             </motion.div>
+          </div>
+        )}
+
         {fundToDelete && (
           <div className="fixed inset-0 z-[80] flex items-center justify-center p-4">
             <motion.div 
