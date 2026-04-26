@@ -298,7 +298,12 @@ function AppContent() {
               )
             } />
             <Route path="/portfolio" element={
-              <MyPortfolio latestData={latestData} allFunds={allFunds} theme={theme} />
+              <MyPortfolio 
+                historyData={formattedData} 
+                latestData={latestData} 
+                allFunds={allFunds} 
+                theme={theme} 
+              />
             } />
             <Route path="/calculator" element={
               <div className="space-y-6 pb-20">
@@ -491,8 +496,8 @@ const ProfilePage = ({ user, logout, signInWithGoogle }: any) => {
       </div>
 
       <div className="bg-gradient-to-br from-slate-800 to-slate-950 p-6 rounded-[32px] text-white">
-         <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-2">Member Since</p>
-         <p className="text-sm font-bold">{new Date().toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: 'numeric' })}</p>
+         <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-2">สมาชิกตั้งแต่</p>
+         <p className="text-sm font-bold">{user.metadata.creationTime ? formatThaiDate(new Date(user.metadata.creationTime).toISOString()) : '...'}</p>
       </div>
     </div>
   );

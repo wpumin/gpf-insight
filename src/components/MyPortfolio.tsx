@@ -2,7 +2,18 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Wallet, Plus, Trash2, TrendingUp, TrendingDown, Info, Calculator, PieChart, Coins, Calendar, ChevronRight, Settings2, ArrowRight, Sparkles, Loader2, Edit2 } from 'lucide-react';
 import clsx from 'clsx';
-import { ResponsiveContainer, PieChart as RePieChart, Pie, Cell, Tooltip as ReTooltip } from 'recharts';
+import { 
+  ResponsiveContainer, 
+  PieChart as RePieChart, 
+  Pie, 
+  Cell, 
+  Tooltip as ReTooltip,
+  AreaChart,
+  Area,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+} from 'recharts';
 
 interface PortfolioItem {
   fund: string;
@@ -20,6 +31,7 @@ interface SalarySettings {
 }
 
 interface MyPortfolioProps {
+  historyData: any[];
   latestData: any;
   allFunds: string[];
   theme: 'light' | 'dark';
@@ -29,8 +41,45 @@ import { useAuth } from '../contexts/AuthContext';
 import { doc, getDoc, setDoc, onSnapshot } from 'firebase/firestore';
 import { db } from '../firebase';
 
-export const MyPortfolio: React.FC<MyPortfolioProps> = ({ latestData, allFunds, theme }) => {
+// --- Payroll Recognition Helpers ---
+const isBusinessDay = (date: Date) => {
+  const day = date.getDay();
+  return day !== 0 && day !== 6;
+};
+
+const getPayrollDates = (year: number, month: number, paymentCycle: 'monthly' | 'biweekly') => {
+  const dates: string[] = [];
+  
+  // Round 1: Mid-month (16th)
+  if (paymentCycle === 'biweekly') {
+    let d16 = new Date(year, month, 16);
+    while (!isBusinessDay(d16)) {
+      d16.setDate(d16.getDate() - 1);
+    }
+    dates.push(`${d16.getFullYear()}-${d16.getMonth() + 1}-${d16.getDate()}`);
+  }
+
+  // Round 2: End of month (3 business days before end)
+  const lastDay = new Date(year, month + 1, 0);
+  let count = 0;
+  let dEnd = new Date(lastDay);
+  while (count < 3) {
+    if (isBusinessDay(dEnd)) {
+      count++;
+    }
+    if (count < 3) {
+      dEnd.setDate(dEnd.getDate() - 1);
+    }
+  }
+  dates.push(`${dEnd.getFullYear()}-${dEnd.getMonth() + 1}-${dEnd.getDate()}`);
+  
+  return dates;
+};
+
+export const MyPortfolio: React.FC<MyPortfolioProps> = ({ historyData, latestData, allFunds, theme }) => {
   const { user, signInWithGoogle } = useAuth();
+  
+  const [portfolioTimeFilter, setPortfolioTimeFilter] = useState<'1M' | '3M' | '6M' | '1Y' | 'MAX'>('MAX');
   
   const [items, setItems] = useState<PortfolioItem[]>([]);
   const [salarySettings, setSalarySettings] = useState<SalarySettings>({
@@ -246,6 +295,115 @@ export const MyPortfolio: React.FC<MyPortfolioProps> = ({ latestData, allFunds, 
     }, 0);
   }, [items, latestData]);
 
+  const portfolioHistory = useMemo(() => {
+    if (!historyData || historyData.length === 0 || items.length === 0) return [];
+    
+    // Sort history by date just in case
+    const sortedHistory = [...historyData].sort((a, b) => a.date.localeCompare(b.date));
+    
+    // Filter history based on portfolioTimeFilter
+    let filteredHistory = sortedHistory;
+    if (portfolioTimeFilter !== 'MAX') {
+      const now = new Date();
+      let monthsToSubtract = 1;
+      if (portfolioTimeFilter === '3M') monthsToSubtract = 3;
+      if (portfolioTimeFilter === '6M') monthsToSubtract = 6;
+      if (portfolioTimeFilter === '1Y') monthsToSubtract = 12;
+      
+      const cutoff = new Date();
+      cutoff.setMonth(now.getMonth() - monthsToSubtract);
+      const cutoffStr = cutoff.toISOString().split('T')[0];
+      filteredHistory = sortedHistory.filter(d => d.date >= cutoffStr);
+    }
+
+    // Advanced Simulation: Backtracking units accumulated from payroll
+    // We start from current total items and work backwards in time
+    let simulatedItems = [...items].map(i => ({ ...i }));
+    
+    // Reverse the sorted history to process from NEWEST to OLDEST
+    const reverseHistory = [...filteredHistory].reverse();
+    const simulatedData = [];
+
+    // Helper: Estimate historical salary (approx 2% increase every April and October)
+    const estimateHistoricalSalary = (baseSalary: number, dateStr: string) => {
+      const date = new Date(dateStr);
+      const current = new Date();
+      const currentYear = current.getFullYear();
+      const dateYear = date.getFullYear();
+      
+      const yearsDiff = currentYear - dateYear;
+      const monthsDiff = (currentYear * 12 + current.getMonth()) - (dateYear * 12 + date.getMonth());
+      
+      // Every 6 months, assume approx 2.5% increment
+      const incrementCount = Math.floor(monthsDiff / 6);
+      return baseSalary / Math.pow(1.025, incrementCount);
+    };
+
+    let prevMonth = -1;
+    
+    for (const day of reverseHistory) {
+      const date = new Date(day.date);
+      const month = date.getMonth();
+      const year = date.getFullYear();
+      const bkkDateStr = `${year}-${month + 1}-${date.getDate()}`;
+      
+      // If we crossed a payroll date, subtract the units that WOULD have been added on that day
+      // (This is a simplified back-accumulation)
+      const payrollDates = getPayrollDates(year, month, salarySettings.paymentCycle);
+      
+      if (payrollDates.includes(bkkDateStr) && month !== prevMonth) {
+        prevMonth = month;
+        
+        // Calculate historical investment amount for this month
+        const historicalSalary = estimateHistoricalSalary(salarySettings.baseSalary, day.date);
+        const myContrib = historicalSalary * ((salarySettings.voluntaryPercent + 3) / 100);
+        const stateContrib = historicalSalary * 0.03;
+        const totalInvest = myContrib + stateContrib;
+        const perPaycheck = (salarySettings.paymentCycle === 'biweekly') ? totalInvest / 2 : totalInvest;
+
+        // Deduct units based on that day's NAV
+        Object.entries(salarySettings.targetAllocations).forEach(([fund, percent]) => {
+          const p = percent as number;
+          if (p > 0) {
+            const nav = day[fund] || (latestData ? latestData[fund] : 0);
+            if (nav > 0) {
+              const unitsAdded = perPaycheck * (p / 100) / nav;
+              const idx = simulatedItems.findIndex(i => i.fund === fund);
+              if (idx >= 0) {
+                simulatedItems[idx].units = Math.max(0, simulatedItems[idx].units - unitsAdded);
+              }
+            }
+          }
+        });
+      }
+
+      // Calculate portfolio value for this simulated point in time
+      let dailyValue = 0;
+      simulatedItems.forEach(item => {
+        const nav = day[item.fund] || 0;
+        dailyValue += nav * item.units;
+      });
+
+      simulatedData.push({
+        date: day.date,
+        displayDate: day.displayDate || day.date,
+        value: dailyValue,
+      });
+    }
+
+    // Return to original chronological order for the chart
+    return simulatedData.reverse().filter(d => d.value > 0);
+  }, [historyData, items, portfolioTimeFilter, salarySettings, latestData]);
+
+  const simulationStats = useMemo(() => {
+    if (portfolioHistory.length < 2) return { change: 0, changePercent: 0, isUp: true };
+    const first = portfolioHistory[0].value;
+    const last = portfolioHistory[portfolioHistory.length - 1].value;
+    const change = last - first;
+    const changePercent = (change / first) * 100;
+    return { change, changePercent, isUp: change >= 0 };
+  }, [portfolioHistory]);
+
   const chartData = useMemo(() => {
     if (!latestData) return [];
     return items.map(item => ({
@@ -259,41 +417,6 @@ export const MyPortfolio: React.FC<MyPortfolioProps> = ({ latestData, allFunds, 
   // --- Effects ---
   // Consolidating all save logic into the existing master effect at line 75
   // Removing redundant effects at 223 and 227 later
-
-  // --- Payroll Recognition Helpers ---
-  const isBusinessDay = (date: Date) => {
-    const day = date.getDay();
-    return day !== 0 && day !== 6;
-  };
-
-  const getPayrollDates = (year: number, month: number, paymentCycle: 'monthly' | 'biweekly') => {
-    const dates: string[] = [];
-    
-    // Round 1: Mid-month (16th)
-    if (paymentCycle === 'biweekly') {
-      let d16 = new Date(year, month, 16);
-      while (!isBusinessDay(d16)) {
-        d16.setDate(d16.getDate() - 1);
-      }
-      dates.push(`${d16.getFullYear()}-${d16.getMonth() + 1}-${d16.getDate()}`);
-    }
-
-    // Round 2: End of month (3 business days before end)
-    const lastDay = new Date(year, month + 1, 0);
-    let count = 0;
-    let dEnd = new Date(lastDay);
-    while (count < 3) {
-      if (isBusinessDay(dEnd)) {
-        count++;
-      }
-      if (count < 3) {
-        dEnd.setDate(dEnd.getDate() - 1);
-      }
-    }
-    dates.push(`${dEnd.getFullYear()}-${dEnd.getMonth() + 1}-${dEnd.getDate()}`);
-    
-    return dates;
-  };
 
   // --- Daily Accrual Auto-DCA Logic ---
   useEffect(() => {
@@ -529,6 +652,102 @@ export const MyPortfolio: React.FC<MyPortfolioProps> = ({ latestData, allFunds, 
             <p className="text-xs font-bold text-indigo-600/60 dark:text-indigo-400/60 uppercase mt-1">รวมออม {salarySettings.voluntaryPercent + 3}% ต่อเดือน</p>
           </div>
         </div>
+      </section>
+
+      {/* --- Portfolio Performance Chart --- */}
+      <section className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-[32px] p-6 sm:p-8 shadow-sm">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8">
+          <div>
+            <h3 className="font-black text-slate-800 dark:text-white text-lg flex items-center gap-2">
+              <Sparkles className="w-5 h-5 text-emerald-500" />
+              แบบจำลองการเติบโต
+            </h3>
+            <p className="text-xs text-slate-400 font-bold uppercase tracking-widest mt-1">Simulated Growth (Estimated)</p>
+          </div>
+          
+          <div className="flex bg-slate-100 dark:bg-slate-800 p-1 rounded-xl">
+            {(['1M', '3M', '6M', '1Y', 'MAX'] as const).map((f) => (
+              <button
+                key={f}
+                onClick={() => setPortfolioTimeFilter(f)}
+                className={clsx(
+                  "px-3 py-1.5 text-[10px] font-black rounded-lg transition-all",
+                  portfolioTimeFilter === f 
+                    ? "bg-white dark:bg-slate-700 text-emerald-600 dark:text-emerald-400 shadow-sm" 
+                    : "text-slate-400 hover:text-slate-600 dark:hover:text-slate-300"
+                )}
+              >
+                {f}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {portfolioHistory.length > 0 ? (
+          <div className="space-y-6">
+            <div className="flex items-baseline gap-3 mb-2">
+              <p className="text-3xl font-black text-slate-800 dark:text-white tracking-tight">
+                ฿{portfolioValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              </p>
+              <div className={clsx(
+                "flex items-center gap-1 text-sm font-bold",
+                simulationStats.isUp ? "text-emerald-500" : "text-red-500"
+              )}>
+                {simulationStats.isUp ? <TrendingUp className="w-4 h-4" /> : <TrendingDown className="w-4 h-4" />}
+                {simulationStats.isUp ? '+' : ''}{simulationStats.changePercent.toFixed(2)}%
+                <span className="text-slate-400 text-[10px] font-medium ml-1">({portfolioTimeFilter})</span>
+              </div>
+            </div>
+
+            <div className="h-[300px] w-full">
+              <ResponsiveContainer width="100%" height="100%">
+                <AreaChart data={portfolioHistory}>
+                  <defs>
+                    <linearGradient id="colorSimulation" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#10b981" stopOpacity={0.3}/>
+                      <stop offset="95%" stopColor="#10b981" stopOpacity={0}/>
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={theme === 'dark' ? '#1e293b' : '#f1f5f9'} />
+                  <XAxis dataKey="displayDate" hide />
+                  <YAxis hide domain={['dataMin * 0.95', 'dataMax * 1.05']} />
+                  <ReTooltip
+                    content={({ active, payload }) => {
+                      if (active && payload && payload.length) {
+                        const d = payload[0].payload;
+                        return (
+                          <div className="bg-white dark:bg-slate-800 p-4 rounded-2xl shadow-2xl border border-slate-100 dark:border-slate-700">
+                            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">{d.displayDate}</p>
+                            <p className="text-lg font-black text-emerald-600 dark:text-emerald-400">
+                              ฿{d.value.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                            </p>
+                            <p className="text-[10px] text-slate-400 font-medium">ยอดออมจำลอง (ณ วันที่ {d.date})</p>
+                          </div>
+                        );
+                      }
+                      return null;
+                    }}
+                  />
+                  <Area type="monotone" dataKey="value" stroke="#10b981" strokeWidth={4} fillOpacity={1} fill="url(#colorSimulation)" animationDuration={1500} />
+                </AreaChart>
+              </ResponsiveContainer>
+            </div>
+            
+            <div className="bg-slate-50 dark:bg-slate-800/30 p-4 rounded-2xl border border-slate-100 dark:border-slate-800/50">
+              <p className="text-[10px] text-slate-400 font-medium italic leading-relaxed">
+                * ระบบกำลังจำลองประวัติการออมของคุณย้อนหลัง โดยคำนวณจาก (1) จำนวนหน่วยปัจจุบันที่คุณถือครอง (2) หักลบเงินออมสะสมรายเดือนย้อนกลับไปในอดีต และ (3) ประมาณการเงินเดือนในอดีตที่ค่อยๆ เพิ่มขึ้นตามรอบ เม.ย./ต.ค.
+              </p>
+            </div>
+          </div>
+        ) : (
+          <div className="h-[300px] flex flex-col items-center justify-center text-slate-400 space-y-4">
+            <div className="w-16 h-16 bg-slate-50 dark:bg-slate-800 rounded-full flex items-center justify-center">
+              <TrendingUp className="w-8 h-8 opacity-20" />
+            </div>
+            <p className="text-sm font-bold uppercase tracking-widest opacity-40">ไม่พบข้อมูลจำลอง</p>
+            <p className="text-xs text-slate-400 max-w-[200px] text-center italic">ระบบต้องมียอดถือครองสินทรัพย์เพื่อสร้างแบบจำลอง</p>
+          </div>
+        )}
       </section>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
