@@ -513,7 +513,12 @@ export const MyPortfolio: React.FC<MyPortfolioProps> = ({ historyData, latestDat
 
   const simulationStats = useMemo(() => {
     if (portfolioHistory.length < 2) return { change: 0, changePercent: 0, isUp: true };
-    const first = portfolioHistory[0].value;
+    
+    // Find the first non-zero value to use as baseline
+    const firstNonZero = portfolioHistory.find(d => d.value > 0);
+    if (!firstNonZero) return { change: 0, changePercent: 0, isUp: true };
+    
+    const first = firstNonZero.value;
     const last = portfolioHistory[portfolioHistory.length - 1].value;
     const change = last - first;
     const changePercent = (change / first) * 100;
@@ -888,10 +893,13 @@ export const MyPortfolio: React.FC<MyPortfolioProps> = ({ historyData, latestDat
               {activeBenchmarks.map(strategyId => {
                 const strat = customStrategies.find(s => s.id === strategyId);
                 const data = benchmarkHistory[strategyId];
-                if (!data || !strat) return null;
+                if (!data || !strat || data.length === 0) return null;
+                
                 const last = data[data.length - 1].value;
-                const first = data[0].value;
-                const change = ((last - first) / (first || 1)) * 100;
+                // Find first non-zero value for benchmark baseline
+                const firstNonZero = data.find(d => d.value > 0);
+                const first = firstNonZero ? firstNonZero.value : 0;
+                const change = first > 0 ? ((last - first) / first) * 100 : 0;
                 
                 return (
                   <div key={strategyId} className="border-l border-slate-100 dark:border-slate-800 pl-6">
