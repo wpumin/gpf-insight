@@ -14,7 +14,8 @@ import {
   Compass,
   Calendar,
   Sun,
-  Moon
+  Moon,
+  Trophy
 } from 'lucide-react';
 import { 
   LineChart, 
@@ -38,6 +39,7 @@ import { DynamicHoldSimulator } from './components/DynamicHoldSimulator';
 import { CustomMixBuilder, AlertMessenger } from './components/InvestmentTools';
 import { MyPortfolio } from './components/MyPortfolio';
 import { MarketOverview } from './components/MarketOverview';
+import { Leaderboard } from './components/Leaderboard';
 
 const FUNDS_MAP: Record<string, string> = {
   UNIT_COST1: "แผนลงทุนพื้นฐานทั่วไป",
@@ -309,6 +311,9 @@ function AppContent() {
                 theme={theme} 
               />
             } />
+            <Route path="/leaderboard" element={
+              <Leaderboard historyData={formattedData} latestData={latestData} />
+            } />
             <Route path="/calculator" element={
               <div className="space-y-6 pb-20">
                  <AlertMessenger data={formattedData} allFunds={allFunds} />
@@ -541,6 +546,15 @@ const DesktopHeader = ({ theme, setTheme, latestData, formatThaiDate }: any) => 
               พอร์ตของฉัน
             </Link>
             <Link 
+              to="/leaderboard" 
+              className={clsx(
+                "px-4 py-2 rounded-xl text-sm font-bold transition-all",
+                pathname === '/leaderboard' ? "bg-emerald-50 text-emerald-600 dark:bg-emerald-500/10 dark:text-emerald-400" : "text-slate-500 hover:text-slate-800 dark:hover:text-slate-200"
+              )}
+            >
+              Leaderboard
+            </Link>
+            <Link 
               to="/calculator" 
               className={clsx(
                 "px-4 py-2 rounded-xl text-sm font-bold transition-all",
@@ -627,6 +641,21 @@ const DesktopHeader = ({ theme, setTheme, latestData, formatThaiDate }: any) => 
             <Wallet className="w-5 h-5" />
             <span className="text-[10px] font-black uppercase tracking-tighter">พอร์ต</span>
             {pathname === '/portfolio' && (
+              <motion.div 
+                layoutId="active-pill"
+                className="absolute inset-x-1 inset-y-1 bg-emerald-50 dark:bg-emerald-500/10 rounded-[1.8rem] -z-10"
+                transition={{ type: "spring", bounce: 0.2, duration: 0.6 }}
+              />
+            )}
+          </Link>
+
+          <Link to="/leaderboard" className={clsx(
+            "flex-1 flex flex-col items-center gap-1.5 py-3 transition-colors relative z-10",
+            pathname === '/leaderboard' ? "text-emerald-600 dark:text-emerald-400" : "text-slate-400 hover:text-slate-600 dark:hover:text-slate-300"
+          )}>
+            <Trophy className="w-5 h-5" />
+            <span className="text-[10px] font-black uppercase tracking-tighter">จัดอันดับ</span>
+            {pathname === '/leaderboard' && (
               <motion.div 
                 layoutId="active-pill"
                 className="absolute inset-x-1 inset-y-1 bg-emerald-50 dark:bg-emerald-500/10 rounded-[1.8rem] -z-10"

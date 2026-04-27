@@ -123,19 +123,19 @@ export const MyPortfolio: React.FC<MyPortfolioProps> = ({ historyData, latestDat
 
   // Sync with Firestore if logged in, otherwise use localStorage
   useEffect(() => {
-    if (loading) return; // Wait for initial loading if necessary, but here loading is true by default
+    if (loading || !user) return;
     
     // We only want to set items if we are NOT in the middle of a sync
     // The onSnapshot will provide the source of truth if logged in
-  }, [user]);
+  }, [user, loading]);
 
   // Handle Initial Load and Firestore Check
   useEffect(() => {
     if (!user) {
       // Load from localStorage if not logged in
       if (typeof localStorage !== 'undefined') {
-        const savedP = localStorage.getItem('gpf_portfolio');
-        const savedS = localStorage.getItem('gpf_salary_settings');
+        const savedP = localStorage.getItem('gpf_portfolio_guest');
+        const savedS = localStorage.getItem('gpf_salary_settings_guest');
         if (savedP) setItems(JSON.parse(savedP));
         if (savedS) setSalarySettings(prev => ({ ...prev, ...JSON.parse(savedS) }));
       }
@@ -151,36 +151,30 @@ export const MyPortfolio: React.FC<MyPortfolioProps> = ({ historyData, latestDat
         
         if (snapshot.exists()) {
           const data = snapshot.data();
-          if (data.portfolio) {
-            setItems(data.portfolio);
-            localStorage.setItem('gpf_portfolio', JSON.stringify(data.portfolio));
-          }
-          if (data.salarySettings) {
-            setSalarySettings(prev => ({ ...prev, ...data.salarySettings }));
-            localStorage.setItem('gpf_salary_settings', JSON.stringify(data.salarySettings));
-          }
-          if (data.customStrategies) {
-            setCustomStrategies(data.customStrategies);
-            localStorage.setItem('gpf_custom_strategies', JSON.stringify(data.customStrategies));
-          }
+          // Ensure we start with empty if the field is missing
+          setItems(data.portfolio || []);
+          setSalarySettings(prev => ({ ...prev, ...(data.salarySettings || {}) }));
+          setCustomStrategies(data.customStrategies || customStrategies);
+          
+          // Cache specifically for this user
+          localStorage.setItem(`gpf_portfolio_${user.uid}`, JSON.stringify(data.portfolio || []));
+          localStorage.setItem(`gpf_salary_settings_${user.uid}`, JSON.stringify(data.salarySettings || {}));
         } else {
-          // If no doc yet, check local storage
-          const savedP = localStorage.getItem('gpf_portfolio');
-          const savedS = localStorage.getItem('gpf_salary_settings');
-          const savedC = localStorage.getItem('gpf_custom_strategies');
+          // New user: Start clean, don't pull from generic localStorage
+          setItems([]);
+          // Check if there's a user-specific cache
+          const savedP = localStorage.getItem(`gpf_portfolio_${user.uid}`);
+          const savedS = localStorage.getItem(`gpf_salary_settings_${user.uid}`);
           if (savedP) setItems(JSON.parse(savedP));
           if (savedS) setSalarySettings(prev => ({ ...prev, ...JSON.parse(savedS) }));
-          if (savedC) setCustomStrategies(JSON.parse(savedC));
         }
       } catch (err) {
         console.error("Firestore fetch error:", err);
-        // Fallback to localStorage
-        const savedP = localStorage.getItem('gpf_portfolio');
-        const savedS = localStorage.getItem('gpf_salary_settings');
-        const savedC = localStorage.getItem('gpf_custom_strategies');
+        // Fallback to user-specific localStorage
+        const savedP = localStorage.getItem(`gpf_portfolio_${user.uid}`);
+        const savedS = localStorage.getItem(`gpf_salary_settings_${user.uid}`);
         if (savedP) setItems(JSON.parse(savedP));
         if (savedS) setSalarySettings(prev => ({ ...prev, ...JSON.parse(savedS) }));
-        if (savedC) setCustomStrategies(JSON.parse(savedC));
       } finally {
         setLoading(false);
       }
@@ -189,38 +183,9 @@ export const MyPortfolio: React.FC<MyPortfolioProps> = ({ historyData, latestDat
     fetchUserPortfolio();
   }, [user]);
 
-  // Save changes ONLY if not loading and user is set OR if local changes happen
-  // Using a separate ref or flag to prevent "phantom" saves on initial load is better
-  // but for now let's ensure we don't overwrite with defaults if data is still coming in
-  useEffect(() => {
-    if (loading) return;
-    
-    const saveToFirestore = async () => {
-      if (user) {
-        try {
-          await setDoc(doc(db, 'users', user.uid), { 
-            portfolio: items,
-            salarySettings,
-            customStrategies
-          }, { merge: true });
-        } catch (e) {
-          console.error("Save failed:", e);
-        }
-      } else {
-        localStorage.setItem('gpf_portfolio', JSON.stringify(items));
-        localStorage.setItem('gpf_salary_settings', JSON.stringify(salarySettings));
-        localStorage.setItem('gpf_custom_strategies', JSON.stringify(customStrategies));
-      }
-    };
-
-    // Debounce saves slightly to avoid hitting firestore too hard
-    const timeout = setTimeout(saveToFirestore, 1000);
-    return () => clearTimeout(timeout);
-  }, [items, salarySettings, customStrategies, user, loading]);
-
   const [isAdding, setIsAdding] = useState(false);
   const [isConfiguringSalary, setIsConfiguringSalary] = useState(false);
-  const [newFund, setNewFund] = useState(allFunds[0]);
+  const [newFund, setNewFund] = useState(allFunds[0] || '');
   const [newUnits, setNewUnits] = useState('');
 
   const [editingItem, setEditingItem] = useState<string | null>(null);
@@ -231,12 +196,21 @@ export const MyPortfolio: React.FC<MyPortfolioProps> = ({ historyData, latestDat
   const [tempSalary, setTempSalary] = useState(salarySettings.baseSalary.toString());
   const [tempAllocations, setTempAllocations] = useState<Record<string, number>>(salarySettings.targetAllocations);
   const [tempVoluntary, setTempVoluntary] = useState(salarySettings.voluntaryPercent);
+  const [tempStartDate, setTempStartDate] = useState(salarySettings.startDate);
+  const [tempPaymentCycle, setTempPaymentCycle] = useState(salarySettings.paymentCycle);
+  const [tempIsAutoEnabled, setTempIsAutoEnabled] = useState(salarySettings.isAutoEnabled);
 
+  // Sync temp states ONLY when modal opens
   useEffect(() => {
-    setTempSalary(salarySettings.baseSalary.toString());
-    setTempAllocations(salarySettings.targetAllocations);
-    setTempVoluntary(salarySettings.voluntaryPercent);
-  }, [salarySettings.baseSalary, salarySettings.targetAllocations, salarySettings.voluntaryPercent]);
+    if (isConfiguringSalary) {
+      setTempSalary(salarySettings.baseSalary.toString());
+      setTempAllocations({...salarySettings.targetAllocations});
+      setTempVoluntary(salarySettings.voluntaryPercent);
+      setTempStartDate(salarySettings.startDate);
+      setTempPaymentCycle(salarySettings.paymentCycle);
+      setTempIsAutoEnabled(salarySettings.isAutoEnabled);
+    }
+  }, [isConfiguringSalary]);
 
   // Filtered funds for dropdown based on active target allocations
   const activeTargetFunds = useMemo(() => {
@@ -332,6 +306,66 @@ export const MyPortfolio: React.FC<MyPortfolioProps> = ({ historyData, latestDat
     }, 0);
   }, [items, latestData]);
 
+  const monthlyGrowthPercent = useMemo(() => {
+    if (!latestData || !historyData || historyData.length < 2 || items.length === 0) return 0;
+    
+    // Get the first day of the current month in the data
+    const latestDate = new Date(latestData.date);
+    const startOfMonth = new Date(latestDate.getFullYear(), latestDate.getMonth(), 1);
+    const startOfMonthStr = startOfMonth.toISOString().split('T')[0];
+    
+    // Find the closest record to the start of the month
+    const startOfMonthRecord = historyData.find(d => d.date >= startOfMonthStr) || historyData[0];
+    
+    if (!startOfMonthRecord || startOfMonthRecord === latestData) return 0;
+    
+    let startVal = 0;
+    let endVal = 0;
+    
+    items.forEach(item => {
+      const startNav = startOfMonthRecord[item.fund] || 0;
+      const endNav = latestData[item.fund] || 0;
+      if (startNav > 0) {
+        startVal += startNav * item.units;
+        endVal += endNav * item.units;
+      }
+    });
+
+    if (startVal === 0) return 0;
+    return ((endVal - startVal) / startVal) * 100;
+  }, [items, historyData, latestData]);
+
+  // Save changes ONLY if not loading and user is set OR if local changes happen
+  useEffect(() => {
+    if (loading) return;
+    
+    const saveToData = async () => {
+      if (user) {
+        try {
+          await setDoc(doc(db, 'users', user.uid), { 
+            portfolio: items,
+            salarySettings,
+            customStrategies,
+            totalValue: portfolioValue,
+            displayName: user.displayName,
+            photoURL: user.photoURL,
+            updatedAt: new Date().toISOString()
+          }, { merge: true });
+        } catch (e) {
+          console.error("Save failed:", e);
+        }
+      } else {
+        localStorage.setItem('gpf_portfolio_guest', JSON.stringify(items));
+        localStorage.setItem('gpf_salary_settings_guest', JSON.stringify(salarySettings));
+        localStorage.setItem('gpf_custom_strategies_guest', JSON.stringify(customStrategies));
+      }
+    };
+
+    // Debounce saves slightly to avoid hitting firestore too hard
+    const timeout = setTimeout(saveToData, 2000);
+    return () => clearTimeout(timeout);
+  }, [items, salarySettings, customStrategies, user, loading, portfolioValue]);
+
   const portfolioHistory = useMemo(() => {
     if (!historyData || historyData.length === 0) return [];
     
@@ -352,63 +386,13 @@ export const MyPortfolio: React.FC<MyPortfolioProps> = ({ historyData, latestDat
       cutoffStr = cutoff.toISOString().split('T')[0];
     }
 
-    const simulatedData = [];
     const simulationStart = salarySettings.startDate || '2022-09-01';
-
-    // 1. Calculate the total principal growth curve based on estimated contributions
-    let totalPrincipal = 0;
-    let lastPayrollStr = '';
-    const dateToPrincipal = new Map<string, number>();
-
-    for (const day of sortedHistory) {
-      if (day.date < simulationStart) continue;
-
-      const date = new Date(day.date);
-      const year = date.getFullYear();
-      const month = date.getMonth();
-      const currentDayStr = `${year}-${month + 1}-${date.getDate()}`;
-      
-      const payrollDates = getPayrollDates(year, month, salarySettings.paymentCycle);
-      
-      if (payrollDates.includes(currentDayStr) && currentDayStr !== lastPayrollStr) {
-        lastPayrollStr = currentDayStr;
-        const historicalSalary = estimateHistoricalSalary(salarySettings.baseSalary, day.date);
-        // Total contribution: Member (3+voluntary) + State (5) = voluntary + 8
-        const totalInvest = historicalSalary * ((salarySettings.voluntaryPercent + 8) / 100);
-        const perPaycheck = (salarySettings.paymentCycle === 'biweekly') ? totalInvest / 2 : totalInvest;
-        totalPrincipal += perPaycheck;
-      }
-      dateToPrincipal.set(day.date, totalPrincipal);
-    }
-
-    // 2. Generate history based on actual units held and the principal accumulation ratio
-    // If we have real items, this anchored approach uses real units * current NAV * growth weighting
-    if (items.length > 0 && portfolioValue > 0) {
-      for (const day of sortedHistory) {
-        if (day.date < cutoffStr) continue;
-        
-        const currentPrincipal = dateToPrincipal.get(day.date) || 0;
-        const ratio = totalPrincipal > 0 ? (currentPrincipal / totalPrincipal) : 0;
-
-        let dailyValue = 0;
-        items.forEach(item => {
-          const nav = day[item.fund] || 0;
-          dailyValue += (item.units * ratio) * nav;
-        });
-
-        simulatedData.push({
-          date: day.date,
-          displayDate: day.displayDate || day.date,
-          value: dailyValue,
-        });
-      }
-      return simulatedData;
-    }
-
-    // Fallback: Pure unit accumulation simulation (for new users)
-    const simulatedItems: { fund: string, units: number }[] = [];
-    lastPayrollStr = '';
     
+    // 1. Sim accumulation (unscaled)
+    const simulatedUnits: Record<string, number> = {};
+    let lastPayrollStr = '';
+    const historicalPoints: { date: string, value: number, displayDate: string }[] = [];
+
     for (const day of sortedHistory) {
       if (day.date < simulationStart) continue;
 
@@ -422,39 +406,48 @@ export const MyPortfolio: React.FC<MyPortfolioProps> = ({ historyData, latestDat
       if (payrollDates.includes(currentDayStr) && currentDayStr !== lastPayrollStr) {
         lastPayrollStr = currentDayStr;
         const historicalSalary = estimateHistoricalSalary(salarySettings.baseSalary, day.date);
+        // Member contribution (3% mandatory + voluntary) + State contribution (5%)
         const totalInvest = historicalSalary * ((salarySettings.voluntaryPercent + 8) / 100);
         const perPaycheck = (salarySettings.paymentCycle === 'biweekly') ? totalInvest / 2 : totalInvest;
 
-        Object.entries(salarySettings.targetAllocations).forEach(([fund, percent]) => {
+        Object.entries(salarySettings.targetAllocations || {}).forEach(([fund, percent]) => {
           const p = percent as number;
           if (p > 0) {
             const nav = day[fund] || 1;
-            const unitsAdded = perPaycheck * (p / 100) / nav;
-            const existing = simulatedItems.find(i => i.fund === fund);
-            if (existing) {
-              existing.units += unitsAdded;
-            } else {
-              simulatedItems.push({ fund, units: unitsAdded });
-            }
+            simulatedUnits[fund] = (simulatedUnits[fund] || 0) + (perPaycheck * (p / 100) / nav);
           }
         });
       }
 
-      if (day.date >= cutoffStr) {
-        let dailyValue = 0;
-        simulatedItems.forEach(item => {
-          dailyValue += (day[item.fund] || 0) * item.units;
-        });
+      let dailyValue = 0;
+      Object.entries(simulatedUnits).forEach(([fund, units]) => {
+        dailyValue += units * (day[fund] || 0);
+      });
 
-        simulatedData.push({
-          date: day.date,
-          displayDate: day.displayDate || day.date,
-          value: dailyValue,
-        });
-      }
+      historicalPoints.push({
+        date: day.date,
+        displayDate: day.displayDate || day.date,
+        value: dailyValue
+      });
     }
 
-    return simulatedData;
+    // 2. Anchor to Reality: Calculate scaling factor to match current portfolio value
+    let scaleRatio = 0;
+    if (historicalPoints.length > 0 && portfolioValue > 0) {
+        const simLatest = historicalPoints[historicalPoints.length - 1].value;
+        if (simLatest > 0) {
+            scaleRatio = portfolioValue / simLatest;
+        }
+    }
+
+    // 3. Return filtered and scaled data
+    return historicalPoints
+      .filter(p => p.date >= cutoffStr)
+      .map(p => ({
+        ...p,
+        value: p.value * scaleRatio
+      }));
+
   }, [historyData, portfolioTimeFilter, salarySettings, items, portfolioValue]);
 
   const benchmarkHistory = useMemo(() => {
@@ -478,14 +471,46 @@ export const MyPortfolio: React.FC<MyPortfolioProps> = ({ historyData, latestDat
     const benchmarks: Record<string, any[]> = {};
     const simulationStart = salarySettings.startDate || '2022-09-01';
     
-    const unscaledSimulatedResults: Record<string, any[]> = {};
-    const strategyLastValues: Record<string, number> = {};
+    // First, we need the SAME scaling ratio used for the main portfolio
+    // This requires simulating the current plan again to find the raw latest value
+    const currentSimUnits: Record<string, number> = {};
+    let lastTempPayroll = '';
+    let simCurrentPlanLatest = 0;
+    
+    for (const day of sortedHistory) {
+      if (day.date < simulationStart) continue;
+      const date = new Date(day.date);
+      const year = date.getFullYear();
+      const month = date.getMonth();
+      const cDayStr = `${year}-${month + 1}-${date.getDate()}`;
+      const payrollDates = getPayrollDates(year, month, salarySettings.paymentCycle);
+      if (payrollDates.includes(cDayStr) && cDayStr !== lastTempPayroll) {
+        lastTempPayroll = cDayStr;
+        const histSalary = estimateHistoricalSalary(salarySettings.baseSalary, day.date);
+        const totalInv = histSalary * ((salarySettings.voluntaryPercent + 8) / 100);
+        const pPay = (salarySettings.paymentCycle === 'biweekly') ? totalInv / 2 : totalInv;
+        Object.entries(salarySettings.targetAllocations || {}).forEach(([fund, percent]) => {
+          const p = percent as number;
+          if (p > 0) {
+            const nav = day[fund] || 1;
+            currentSimUnits[fund] = (currentSimUnits[fund] || 0) + (pPay * (p / 100) / nav);
+          }
+        });
+      }
+      simCurrentPlanLatest = 0;
+      Object.entries(currentSimUnits).forEach(([fund, units]) => {
+        simCurrentPlanLatest += units * (day[fund] || 0);
+      });
+    }
 
+    const scaleRatio = (portfolioValue > 0 && simCurrentPlanLatest > 0) ? (portfolioValue / simCurrentPlanLatest) : 1;
+
+    // Now simulate each benchmark using the same scaling logic
     activeBenchmarks.forEach(strategyId => {
       const strategy = customStrategies.find(s => s.id === strategyId);
       if (!strategy) return;
 
-      const data: any[] = [];
+      const results: any[] = [];
       const strategyUnits: Record<string, number> = {};
       let lastBPayrollStr = '';
 
@@ -519,53 +544,10 @@ export const MyPortfolio: React.FC<MyPortfolioProps> = ({ historyData, latestDat
            Object.entries(strategyUnits).forEach(([fund, units]) => {
               dayTotalVal += units * (day[fund] || 0);
            });
-           data.push({ date: day.date, value: dayTotalVal });
+           results.push({ date: day.date, value: dayTotalVal * scaleRatio });
          }
       }
-      unscaledSimulatedResults[strategyId] = data;
-      strategyLastValues[strategyId] = data.length > 0 ? data[data.length - 1].value : 0;
-    });
-
-    // To make benchmarks comparable, we calculate the ratio that would make the CURRENT PLAN simulation match portfolioValue
-    let unscaledCurrentPlanLatest = 1;
-    const currentSimUnits: Record<string, number> = {};
-    let lastTempPayroll = '';
-    
-    for (const day of sortedHistory) {
-      if (day.date < simulationStart) continue;
-      const date = new Date(day.date);
-      const year = date.getFullYear();
-      const month = date.getMonth();
-      const cDayStr = `${year}-${month + 1}-${date.getDate()}`;
-
-      const payrollDates = getPayrollDates(year, month, salarySettings.paymentCycle);
-      if (payrollDates.includes(cDayStr) && cDayStr !== lastTempPayroll) {
-        lastTempPayroll = cDayStr;
-        const histSalary = estimateHistoricalSalary(salarySettings.baseSalary, day.date);
-        const totalInv = histSalary * ((salarySettings.voluntaryPercent + 8) / 100);
-        const pPay = (salarySettings.paymentCycle === 'biweekly') ? totalInv / 2 : totalInv;
-        Object.entries(salarySettings.targetAllocations).forEach(([fund, percent]) => {
-          const p = percent as number;
-          if (p > 0) {
-            const nav = day[fund] || 1;
-            currentSimUnits[fund] = (currentSimUnits[fund] || 0) + (pPay * (p / 100) / nav);
-          }
-        });
-      }
-      unscaledCurrentPlanLatest = 0;
-      Object.entries(currentSimUnits).forEach(([fund, units]) => {
-         unscaledCurrentPlanLatest += units * (day[fund] || 0);
-      });
-    }
-
-    const scalingRatio = (portfolioValue > 0 && unscaledCurrentPlanLatest > 0) ? (portfolioValue / unscaledCurrentPlanLatest) : 1;
-
-    activeBenchmarks.forEach(strategyId => {
-      const data = unscaledSimulatedResults[strategyId] || [];
-      benchmarks[strategyId] = data.map(d => ({
-        ...d,
-        value: d.value * scalingRatio
-      }));
+      benchmarks[strategyId] = results;
     });
 
     return benchmarks;
@@ -774,7 +756,12 @@ export const MyPortfolio: React.FC<MyPortfolioProps> = ({ historyData, latestDat
             </div>
             <div className="bg-black/10 backdrop-blur-sm p-3 rounded-2xl border border-white/5">
               <p className="text-xs text-emerald-200/60 font-black uppercase tracking-widest mb-1">การเติบโตเดือนปัจจุบัน</p>
-              <p className="text-lg font-bold text-emerald-300">+0.85%</p>
+              <p className={clsx(
+                "text-lg font-bold",
+                monthlyGrowthPercent >= 0 ? "text-emerald-300" : "text-red-300"
+              )}>
+                {monthlyGrowthPercent >= 0 ? '+' : ''}{monthlyGrowthPercent.toFixed(2)}%
+              </p>
             </div>
           </div>
         </div>
@@ -1282,7 +1269,7 @@ export const MyPortfolio: React.FC<MyPortfolioProps> = ({ historyData, latestDat
                         <div className="flex items-center gap-2 mt-1">
                           <input 
                             type="number"
-                            value={editUnits}
+                            value={editUnits || ''}
                             onChange={(e) => setEditUnits(e.target.value)}
                             className="w-24 bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded px-2 py-0.5 text-xs font-bold outline-none"
                             autoFocus
@@ -1361,7 +1348,7 @@ export const MyPortfolio: React.FC<MyPortfolioProps> = ({ historyData, latestDat
                     <input 
                       type="number"
                       inputMode="decimal"
-                      value={tempSalary}
+                      value={tempSalary || ''}
                       onChange={(e) => setTempSalary(e.target.value)}
                       className="w-full bg-slate-50 dark:bg-slate-950 p-5 rounded-3xl text-4xl font-black text-emerald-600 focus:ring-4 ring-emerald-500/20 border-2 border-transparent focus:border-emerald-500 outline-none transition-all pr-20"
                     />
@@ -1375,16 +1362,16 @@ export const MyPortfolio: React.FC<MyPortfolioProps> = ({ historyData, latestDat
                   <div className="relative">
                     <input 
                       type="date"
-                      value={salarySettings.startDate}
-                      onChange={(e) => setSalarySettings({...salarySettings, startDate: e.target.value})}
+                      value={tempStartDate || ''}
+                      onChange={(e) => setTempStartDate(e.target.value)}
                       className={clsx(
                         "w-full bg-slate-50 dark:bg-slate-950 p-5 rounded-3xl text-lg font-bold border-2 border-transparent focus:border-emerald-500 outline-none transition-all",
                         "opacity-0 absolute inset-0 z-10 cursor-pointer"
                       )}
                     />
                     <div className="w-full bg-slate-50 dark:bg-slate-950 p-5 rounded-3xl text-lg font-bold text-slate-800 dark:text-white border-2 border-slate-100 dark:border-slate-800 flex items-center justify-between">
-                       <span>{salarySettings.startDate ? (() => {
-                         const d = new Date(salarySettings.startDate);
+                       <span>{tempStartDate ? (() => {
+                         const d = new Date(tempStartDate);
                          const day = d.getDate();
                          const months = ["ม.ค.", "ก.พ.", "มี.ค.", "เม.ย.", "พ.ค.", "มิ.ย.", "ก.ค.", "ส.ค.", "ก.ย.", "ต.ค.", "พ.ย.", "ธ.ค."];
                          const month = months[d.getMonth()];
@@ -1402,8 +1389,8 @@ export const MyPortfolio: React.FC<MyPortfolioProps> = ({ historyData, latestDat
                     <label className="text-[10px] font-black text-state-400 uppercase tracking-[0.2em] mb-3 block ml-1">สัดส่วนออมเพิ่ม Voluntary %</label>
                     <div className="relative group">
                       <select 
-                        value={salarySettings.voluntaryPercent}
-                        onChange={(e) => setSalarySettings({...salarySettings, voluntaryPercent: Number(e.target.value)})}
+                        value={tempVoluntary}
+                        onChange={(e) => setTempVoluntary(Number(e.target.value))}
                         className="w-full bg-slate-50 dark:bg-slate-950 p-5 rounded-3xl text-2xl font-black text-indigo-600 border-2 border-transparent focus:border-indigo-500 outline-none appearance-none cursor-pointer"
                       >
                         {Array.from({length: 25}, (_, i) => i + 3).map(v => <option key={v} value={v}>{v}%</option>)}
@@ -1425,51 +1412,35 @@ export const MyPortfolio: React.FC<MyPortfolioProps> = ({ historyData, latestDat
                       <Sparkles className="w-4 h-4 text-emerald-600" />
                       <span className="text-xs font-black text-emerald-800 dark:text-emerald-300 uppercase italic">Smart Auto-Update</span>
                     </div>
-                    <button 
-                      onClick={() => setSalarySettings({...salarySettings, isAutoEnabled: !salarySettings.isAutoEnabled})}
-                      className={clsx(
-                        "w-10 h-5 rounded-full transition-colors relative",
-                        salarySettings.isAutoEnabled ? "bg-emerald-500" : "bg-slate-300 dark:bg-slate-700"
-                      )}
-                    >
-                      <motion.div 
-                        animate={{ x: salarySettings.isAutoEnabled ? 20 : 2 }}
-                        className="absolute top-1 w-3 h-3 bg-white rounded-full shadow-sm"
-                      />
-                    </button>
+                    <label className="relative inline-flex items-center cursor-pointer">
+                      <input 
+                      type="checkbox" 
+                      className="sr-only peer"
+                      checked={tempIsAutoEnabled || false}
+                      onChange={(e) => setTempIsAutoEnabled(e.target.checked)}
+                    />
+                      <div className="w-9 h-5 bg-slate-200 peer-focus:outline-none rounded-full peer dark:bg-slate-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-emerald-600"></div>
+                    </label>
                   </div>
-                  <p className="text-[10px] text-emerald-600/70 dark:text-emerald-400/60 leading-tight">
-                    ระบบจะคำนวณและเพิ่มจำนวนหน่วย Units ให้คุณอัตโนมัติตามรอบการจ่ายเงินเดือน (3 วันทำการก่อนสิ้นเดือน หรือ 16th และ 3 วันทำการก่อนสิ้นเดือน) ทุกเวลา 12:00 น.
+                  <p className="text-[10px] text-slate-500 dark:text-slate-400 leading-tight">
+                    อัปเดดอัตโนมัติตามสัดส่วนที่ตั้งไว้ เมื่อมีการจ่ายเงินเพิ่ม
                   </p>
                 </div>
 
-                {/* Target Allocation Section */}
-                <div className="pt-4 border-t border-slate-100 dark:border-slate-800">
-                  <div className="flex justify-between items-center mb-4">
-                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block">สัดส่วนแผนที่เลือก %</label>
-                    <span className={clsx("text-[10px] font-black px-2 py-0.5 rounded-full", hasTempAllocationError ? "bg-red-100 text-red-600" : "bg-emerald-100 text-emerald-600")}>
-                      Total: {tempAllocationTotal}%
-                      {hasTempAllocationError && " ต้องครบ 100%"}
-                    </span>
+                {/* --- Target Allocations within Salary Config --- */}
+                <div className="bg-slate-50 dark:bg-slate-950 p-6 rounded-[32px] border border-slate-100 dark:border-slate-800">
+                  <div className="flex items-center justify-between mb-4">
+                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block">สัดส่วนที่ต้องการ (ต้องครบ 100%)</label>
+                    <div className={clsx(
+                      "px-3 py-1 rounded-full text-[10px] font-black",
+                      tempAllocationTotal === 100 ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-700"
+                    )}>
+                      TOTAL: {tempAllocationTotal}%
+                    </div>
                   </div>
 
-                  <p className="text-[10px] text-slate-500 mb-4 ml-1 leading-relaxed">
-                    * <span className="font-bold text-slate-700 dark:text-slate-300">สัดส่วนจริง</span> คือสัดส่วนของกองทุนที่คุณถือครองอยู่จริง ณ ปัจจุบัน ซึ่งจะขยับตามราคา NAV 
-                    <br/>* <span className="font-bold text-slate-700 dark:text-slate-300">สัดส่วนเป้าหมาย</span> คือสัดส่วนที่คุณตั้งใจจะออมเพิ่มในอนาคต ยอดออมรายเดือนอัตโนมัติจะใช้สัดส่วนนี้ (อัปเดตตามรอบเงินเดือน)
-                  </p>
-
-                  {/* Allocation Warning for Sum Check */}
-                  {tempAllocationTotal > 100 && (
-                    <div className="mb-4 p-3 bg-red-50 dark:bg-red-900/20 border border-red-100 dark:border-red-800 rounded-xl flex gap-2 items-start">
-                      <TrendingUp className="w-4 h-4 text-red-600 shrink-0 mt-0.5" />
-                      <p className="text-[10px] text-red-700 dark:text-red-400 leading-tight font-bold">
-                        สัดส่วนรวมเกิน 100% (เกิน {tempAllocationTotal - 100}%) กรุณาลดสัดส่วนบางกองทุนลง
-                      </p>
-                    </div>
-                  )}
-
                   {hasTempGoldLimitError && (
-                    <div className="mb-4 p-3 bg-amber-50 dark:bg-amber-900/20 border border-amber-100 dark:border-amber-800 rounded-xl flex gap-2 items-start">
+                    <div className="mb-4 flex items-start gap-2 p-3 bg-amber-50 dark:bg-amber-900/10 rounded-xl border border-amber-100 dark:border-amber-800/20">
                       <Info className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
                       <p className="text-[10px] text-amber-700 dark:text-amber-400 leading-tight">
                         คำเตือน: กองทุนทองคำไม่ควรเกิน 20% ตามเงื่อนไข กบข.
@@ -1487,19 +1458,42 @@ export const MyPortfolio: React.FC<MyPortfolioProps> = ({ historyData, latestDat
                             <input 
                               type="range"
                               min="0"
-                              max={Math.max(currentVal, 100 - (tempAllocationTotal - currentVal))}
+                              max="100"
                               step="1"
                               value={currentVal}
                               onChange={(e) => {
                                 const val = Number(e.target.value);
                                 const otherTotal = tempAllocationTotal - currentVal;
-                                const allowed = 100 - otherTotal;
-                                const newVal = Math.min(val, allowed);
-
-                                setTempAllocations({
-                                  ...tempAllocations,
-                                  [fund]: newVal
-                                });
+                                
+                                // If new val + others > 100, we need to reduce others proportionally
+                                if (val + otherTotal > 100) {
+                                  const overflow = (val + otherTotal) - 100;
+                                  const nextAllocations = { ...tempAllocations, [fund]: val };
+                                  
+                                  // List of other funds that HAVE values to reduce
+                                  const otherFunds = allFunds.filter(f => f !== fund && (tempAllocations[f] || 0) > 0);
+                                  
+                                  if (otherFunds.length > 0) {
+                                    let remainingOverflow = overflow;
+                                    
+                                    // Sort other funds by value to reduce larger ones first (more stable feel)
+                                    otherFunds.sort((a, b) => (tempAllocations[b] || 0) - (tempAllocations[a] || 0));
+                                    
+                                    otherFunds.forEach((f, idx) => {
+                                      const currentOtherVal = tempAllocations[f] || 0;
+                                      const deduction = idx === otherFunds.length - 1 ? remainingOverflow : Math.min(currentOtherVal, Math.round(overflow / otherFunds.length));
+                                      nextAllocations[f] = Math.max(0, currentOtherVal - deduction);
+                                      remainingOverflow -= deduction;
+                                    });
+                                    
+                                    setTempAllocations(nextAllocations);
+                                  } else {
+                                    // Nothing else to reduce, just cap current
+                                    setTempAllocations({ ...tempAllocations, [fund]: 100 });
+                                  }
+                                } else {
+                                  setTempAllocations({ ...tempAllocations, [fund]: val });
+                                }
                               }}
                               className="w-24 accent-emerald-600"
                             />
@@ -1509,19 +1503,19 @@ export const MyPortfolio: React.FC<MyPortfolioProps> = ({ historyData, latestDat
                       );
                     })}
                   </div>
-                </div>
+
                   <div className="grid grid-cols-1 gap-4 pt-4 border-t border-slate-100 dark:border-slate-800">
                     <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 block">รอบการจ่ายเงินเดือน</label>
                     <div className="flex bg-slate-50 dark:bg-slate-800 p-1 rounded-xl">
                       <button 
-                        onClick={() => setSalarySettings({...salarySettings, paymentCycle: 'monthly'})}
-                        className={clsx("flex-1 py-2 rounded-lg text-[10px] font-black uppercase transition-all", salarySettings.paymentCycle === 'monthly' ? "bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-sm" : "text-slate-400")}
+                        onClick={() => setTempPaymentCycle('monthly')}
+                        className={clsx("flex-1 py-2 rounded-lg text-[10px] font-black uppercase transition-all", tempPaymentCycle === 'monthly' ? "bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-sm" : "text-slate-400")}
                       >
                         1 ครั้ง/เดือน
                       </button>
                       <button 
-                        onClick={() => setSalarySettings({...salarySettings, paymentCycle: 'biweekly'})}
-                        className={clsx("flex-1 py-2 rounded-lg text-[10px] font-black uppercase transition-all", salarySettings.paymentCycle === 'biweekly' ? "bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-sm" : "text-slate-400")}
+                        onClick={() => setTempPaymentCycle('biweekly')}
+                        className={clsx("flex-1 py-2 rounded-lg text-[10px] font-black uppercase transition-all", tempPaymentCycle === 'biweekly' ? "bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-sm" : "text-slate-400")}
                       >
                         2 ครั้ง/เดือน
                       </button>
@@ -1539,7 +1533,10 @@ export const MyPortfolio: React.FC<MyPortfolioProps> = ({ historyData, latestDat
                           ...prev, 
                           baseSalary: val,
                           targetAllocations: tempAllocations,
-                          voluntaryPercent: tempVoluntary
+                          voluntaryPercent: tempVoluntary,
+                          startDate: tempStartDate,
+                          paymentCycle: tempPaymentCycle,
+                          isAutoEnabled: tempIsAutoEnabled
                         }));
                       }
                       setIsConfiguringSalary(false);
@@ -1552,7 +1549,8 @@ export const MyPortfolio: React.FC<MyPortfolioProps> = ({ historyData, latestDat
                     บันทึกและคำนวณใหม่
                   </button>
                 </div>
-              </motion.div>
+              </div>
+            </motion.div>
             </div>
           )}
         </AnimatePresence>
@@ -1593,7 +1591,7 @@ export const MyPortfolio: React.FC<MyPortfolioProps> = ({ historyData, latestDat
                   <input 
                     type="number"
                     placeholder="0.0000"
-                    value={newUnits}
+                    value={newUnits || ''}
                     onChange={(e) => setNewUnits(e.target.value)}
                     className="w-full bg-slate-50 dark:bg-slate-800 p-4 rounded-2xl text-xl font-black text-slate-900 dark:text-white focus:ring-2 ring-emerald-500 outline-none transition-all"
                   />
@@ -1620,7 +1618,7 @@ export const MyPortfolio: React.FC<MyPortfolioProps> = ({ historyData, latestDat
         )}
       </AnimatePresence>
       
-      {/* --- Delete Confirmation Modal --- */}
+      {/* --- Strategy comparison Modal --- */}
       <AnimatePresence>
         {isCreatingStrategy && (
           <div className="fixed inset-0 z-[100] flex items-end sm:items-center justify-center p-0 sm:p-4">
@@ -1654,22 +1652,39 @@ export const MyPortfolio: React.FC<MyPortfolioProps> = ({ historyData, latestDat
                     <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4 block">ปรับสัดส่วนที่ต้องการจำลอง (%)</label>
                     <div className="space-y-4 max-h-[300px] overflow-y-auto pr-2 no-scrollbar">
                       {allFunds.map(fund => {
-                        const val = newStrategyAllocations[fund] || 0;
-                        const otherTotal = Object.entries(newStrategyAllocations).reduce((sum, [f, v]) => f === fund ? sum : sum + v, 0);
-                        const maxAllowed = 100 - otherTotal;
+                        const val = (newStrategyAllocations[fund] as number) || 0;
+                        const otherTotal = Object.entries(newStrategyAllocations).reduce((sum: number, [f, v]) => f === fund ? sum : sum + (v as number), 0);
                         
                         return (
                           <div key={fund} className="flex items-center gap-3">
                             <span className="flex-1 text-[11px] font-bold text-slate-600 dark:text-slate-300 truncate">{fund}</span>
                             <div className="flex items-center gap-2">
                               <input 
-                                type="range" min="0" max={Math.max(val, maxAllowed)} step="1"
+                                type="range" min="0" max="100" step="1"
                                 value={val}
                                 onChange={(e) => {
                                   let requested = Number(e.target.value);
-                                  // Cap at remaining budget for simpler balancing
-                                  const newVal = Math.min(requested, 100 - otherTotal);
-                                  setNewStrategyAllocations({...newStrategyAllocations, [fund]: newVal});
+                                  if (requested + otherTotal > 100) {
+                                    const overflow = (requested + otherTotal) - 100;
+                                    const nextBatch = { ...newStrategyAllocations, [fund]: requested };
+                                    const others = allFunds.filter(f => f !== fund && ((newStrategyAllocations[f] as number) || 0) > 0);
+                                    
+                                    if (others.length > 0) {
+                                      let rem = overflow;
+                                      others.sort((a, b) => ((newStrategyAllocations[b] as number) || 0) - ((newStrategyAllocations[a] as number) || 0));
+                                      others.forEach((f, i) => {
+                                        const cur = (newStrategyAllocations[f] as number) || 0;
+                                        const dec = i === others.length - 1 ? rem : Math.min(cur, Math.round(overflow / others.length));
+                                        nextBatch[f] = Math.max(0, cur - dec);
+                                        rem -= dec;
+                                      });
+                                      setNewStrategyAllocations(nextBatch);
+                                    } else {
+                                      setNewStrategyAllocations({ ...newStrategyAllocations, [fund]: 100 });
+                                    }
+                                  } else {
+                                    setNewStrategyAllocations({...newStrategyAllocations, [fund]: requested});
+                                  }
                                 }}
                                 className="w-24 accent-violet-600"
                               />
@@ -1684,10 +1699,10 @@ export const MyPortfolio: React.FC<MyPortfolioProps> = ({ historyData, latestDat
                       <span className="text-xs font-bold text-slate-500 uppercase">สัดส่วนรวม:</span>
                       <span className={clsx(
                         "text-lg font-black",
-                        Object.values(newStrategyAllocations).reduce((a, b) => a + b, 0) === 100 ? "text-emerald-600" : "text-amber-500"
+                        (Object.values(newStrategyAllocations).reduce((a: number, b: number) => a + (b as number), 0) as number) === 100 ? "text-emerald-600" : "text-amber-500"
                       )}>
-                        {Object.values(newStrategyAllocations).reduce((a, b) => a + b, 0)}%
-                        {Object.values(newStrategyAllocations).reduce((a, b) => a + b, 0) < 100 && <span className="text-[10px] ml-2 font-bold">(ยังไม่ครบ 100%)</span>}
+                        {Object.values(newStrategyAllocations).reduce((a: number, b: number) => a + (b as number), 0) as number}%
+                        {(Object.values(newStrategyAllocations).reduce((a: number, b: number) => a + (b as number), 0) as number) < 100 && <span className="text-[10px] ml-2 font-bold">(ยังไม่ครบ 100%)</span>}
                       </span>
                     </div>
                  </div>
@@ -1700,7 +1715,7 @@ export const MyPortfolio: React.FC<MyPortfolioProps> = ({ historyData, latestDat
                       ยกเลิก
                     </button>
                     <button 
-                      disabled={!newStrategyName || Object.values(newStrategyAllocations).reduce((a, b) => a + b, 0) !== 100}
+                      disabled={!newStrategyName || Object.values(newStrategyAllocations).reduce((a: number, b: number) => a + (b as number), 0) !== 100}
                       onClick={() => {
                         if (strategyBeingEdited) {
                           setCustomStrategies(prev => prev.map(s => s.id === strategyBeingEdited.id ? {
@@ -1722,7 +1737,7 @@ export const MyPortfolio: React.FC<MyPortfolioProps> = ({ historyData, latestDat
                       }}
                       className={clsx(
                         "flex-[2] py-4 px-6 rounded-2xl font-black transition-all shadow-lg active:scale-95 text-white",
-                        !newStrategyName || Object.values(newStrategyAllocations).reduce((a, b) => a + b, 0) !== 100 
+                        !newStrategyName || Object.values(newStrategyAllocations).reduce((a: number, b: number) => a + (b as number), 0) !== 100 
                           ? "bg-slate-200 cursor-not-allowed shadow-none" 
                           : "bg-emerald-600 shadow-emerald-500/30"
                       )}
@@ -1734,7 +1749,10 @@ export const MyPortfolio: React.FC<MyPortfolioProps> = ({ historyData, latestDat
              </motion.div>
           </div>
         )}
+      </AnimatePresence>
 
+      {/* --- Delete Confirmation Modal --- */}
+      <AnimatePresence>
         {fundToDelete && (
           <div className="fixed inset-0 z-[80] flex items-center justify-center p-4">
             <motion.div 

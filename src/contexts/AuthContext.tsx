@@ -22,6 +22,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
 
+  const [isSigningIn, setIsSigningIn] = useState(false);
+
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
       setUser(currentUser);
@@ -31,8 +33,22 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, []);
 
   const signInWithGoogle = async () => {
-    const provider = new GoogleAuthProvider();
-    await signInWithPopup(auth, provider);
+    if (isSigningIn) return;
+    setIsSigningIn(true);
+    try {
+      const provider = new GoogleAuthProvider();
+      await signInWithPopup(auth, provider);
+    } catch (error: any) {
+      if (error.code === 'auth/cancelled-popup-request') {
+        console.log('SignIn popup already open or cancelled by multiple requests');
+      } else if (error.code === 'auth/popup-closed-by-user') {
+        console.log('SignIn popup closed by user');
+      } else {
+        console.error('SignIn error:', error);
+      }
+    } finally {
+      setIsSigningIn(false);
+    }
   };
 
   const logout = async () => {

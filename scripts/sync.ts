@@ -182,6 +182,8 @@ export async function syncFNG() {
         const headers = {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36',
             'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+            'Referer': 'https://www.google.com/',
+            'Accept-Language': 'en-US,en;q=0.9',
         };
 
         const sources = [
@@ -223,7 +225,11 @@ export async function syncFNG() {
                     }
                 }
             } catch (err: any) {
-                 console.log(`[Sync] Source ${url} failed: ${err.message}`);
+                 if (err.response?.status === 403) {
+                     console.log(`[Sync] Source ${url} blocked access (403 Forbidden). This is common for scrapers.`);
+                 } else {
+                     console.log(`[Sync] Source ${url} failed: ${err.message}`);
+                 }
             }
         }
 
