@@ -26,20 +26,25 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '22'
           cache: 'npm'
           
       - name: Install dependencies
-        run: npm ci
+        run: npm install
         
       - name: Build
-        run: npx vite build --base=/
+        run: npm run build
         
       - name: Add CNAME
-        run: echo "gpf-in.site" > ./dist/CNAME
+        run: |
+          mkdir -p ./dist
+          echo "gpf-in.site" > ./dist/CNAME
+          
+      - name: Check build output
+        run: ls -R ./dist
         
       - name: Setup Pages
-        uses: actions/configure-pages@v4
+        uses: actions/configure-pages@v5
         
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
