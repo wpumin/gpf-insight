@@ -37,9 +37,13 @@ service cloud.firestore {
       allow write: if true; 
     }
 
-    // User Portfolios - Private to the user
+    // User Portfolios
     match /users/{userId} {
-      allow read: if isOwner(userId);
+      // Allow individual retrieval even if not signed in (for sharing)
+      allow get: if true;
+      // Allow listing for the leaderboard (ordered by totalValue)
+      allow list: if isSignedIn();
+      // Allow users to manage their own profile
       allow create, update: if isOwner(userId) && isValidUser(request.resource.data);
       allow delete: if isOwner(userId);
     }
