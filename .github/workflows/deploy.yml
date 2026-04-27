@@ -30,18 +30,25 @@ jobs:
           cache: 'npm'
           
       - name: Install dependencies
-        run: npm install
+        run: |
+          if [ -f "package-lock.json" ]; then
+            npm ci
+          else
+            npm install
+          fi
         
       - name: Build
         run: npm run build
         
-      - name: Add CNAME
+      - name: Verify build
         run: |
-          mkdir -p ./dist
-          echo "gpf-in.site" > ./dist/CNAME
-          
-      - name: Check build output
-        run: ls -R ./dist
+          if [ -d "dist" ]; then
+            echo "Build successful. Contents of dist:"
+            ls -R dist
+          else
+            echo "::error::Build failed: dist directory not found. Check build logs above."
+            exit 1
+          fi
         
       - name: Setup Pages
         uses: actions/configure-pages@v5
