@@ -36,11 +36,11 @@
     "tailwind-merge": "^3.5.0"
   },
   "devDependencies": {
+    "@types/canvas-confetti": "^1.9.0",
     "@types/express": "^4.17.21",
     "@types/node": "^22.14.0",
     "@types/node-cron": "^3.0.11",
     "@types/sqlite3": "^3.1.11",
-    "@types/canvas-confetti": "^1.9.0",
     "autoprefixer": "^10.4.21",
     "esbuild": "^0.28.0",
     "tailwindcss": "^4.1.14",
