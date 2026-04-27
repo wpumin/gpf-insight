@@ -5,6 +5,7 @@ import clsx from 'clsx';
 import { collection, query, orderBy, onSnapshot, limit, doc, getDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 import { useAuth } from '../contexts/AuthContext';
+// Use default import for canvas-confetti
 import confetti from 'canvas-confetti';
 import { 
   PieChart as RePieChart, 
