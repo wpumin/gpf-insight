@@ -55,6 +55,13 @@ const isBusinessDay = (date: Date) => {
   return day !== 0 && day !== 6;
 };
 
+const estimateHistoricalSalary = (baseSalary: number, dateStr: string) => {
+  const date = new Date(dateStr);
+  const current = new Date();
+  const monthsDiff = (current.getFullYear() * 12 + current.getMonth()) - (date.getFullYear() * 12 + date.getMonth());
+  return baseSalary / Math.pow(1.025, Math.floor(monthsDiff / 6));
+};
+
 const getPayrollDates = (year: number, month: number, paymentCycle: 'monthly' | 'biweekly') => {
   const dates: string[] = [];
   
@@ -105,7 +112,7 @@ export const MyPortfolio: React.FC<MyPortfolioProps> = ({ historyData, latestDat
     baseSalary: 15000,
     contributionPercent: 3, // Fixed
     voluntaryPercent: 3,
-    stateContributionPercent: 3, // Fixed
+    stateContributionPercent: 5, // 3% Matching + 2% Compensation
     paymentCycle: 'monthly',
     isAutoEnabled: false,
     targetAllocations: { "แผนลงทุนพื้นฐานทั่วไป": 100 },
@@ -331,8 +338,8 @@ export const MyPortfolio: React.FC<MyPortfolioProps> = ({ historyData, latestDat
     const sortedHistory = [...historyData].sort((a, b) => a.date.localeCompare(b.date));
     
     let cutoffStr = '1900-01-01';
+    const now = new Date();
     if (portfolioTimeFilter !== 'MAX') {
-      const now = new Date();
       let monthsToSubtract = 1;
       if (portfolioTimeFilter === '3M') monthsToSubtract = 3;
       if (portfolioTimeFilter === '6M') monthsToSubtract = 6;
@@ -345,36 +352,77 @@ export const MyPortfolio: React.FC<MyPortfolioProps> = ({ historyData, latestDat
       cutoffStr = cutoff.toISOString().split('T')[0];
     }
 
-    const simulatedItems: PortfolioItem[] = [];
     const simulatedData = [];
-
-    const estimateHistoricalSalary = (baseSalary: number, dateStr: string) => {
-      const date = new Date(dateStr);
-      const current = new Date();
-      const monthsDiff = (current.getFullYear() * 12 + current.getMonth()) - (date.getFullYear() * 12 + date.getMonth());
-      return baseSalary / Math.pow(1.025, Math.floor(monthsDiff / 6));
-    };
-
-    let pPrevMonth = -1;
     const simulationStart = salarySettings.startDate || '2022-09-01';
+
+    // 1. Calculate the total principal growth curve based on estimated contributions
+    let totalPrincipal = 0;
+    let lastPayrollStr = '';
+    const dateToPrincipal = new Map<string, number>();
+
+    for (const day of sortedHistory) {
+      if (day.date < simulationStart) continue;
+
+      const date = new Date(day.date);
+      const year = date.getFullYear();
+      const month = date.getMonth();
+      const currentDayStr = `${year}-${month + 1}-${date.getDate()}`;
+      
+      const payrollDates = getPayrollDates(year, month, salarySettings.paymentCycle);
+      
+      if (payrollDates.includes(currentDayStr) && currentDayStr !== lastPayrollStr) {
+        lastPayrollStr = currentDayStr;
+        const historicalSalary = estimateHistoricalSalary(salarySettings.baseSalary, day.date);
+        // Total contribution: Member (3+voluntary) + State (5) = voluntary + 8
+        const totalInvest = historicalSalary * ((salarySettings.voluntaryPercent + 8) / 100);
+        const perPaycheck = (salarySettings.paymentCycle === 'biweekly') ? totalInvest / 2 : totalInvest;
+        totalPrincipal += perPaycheck;
+      }
+      dateToPrincipal.set(day.date, totalPrincipal);
+    }
+
+    // 2. Generate history based on actual units held and the principal accumulation ratio
+    // If we have real items, this anchored approach uses real units * current NAV * growth weighting
+    if (items.length > 0 && portfolioValue > 0) {
+      for (const day of sortedHistory) {
+        if (day.date < cutoffStr) continue;
+        
+        const currentPrincipal = dateToPrincipal.get(day.date) || 0;
+        const ratio = totalPrincipal > 0 ? (currentPrincipal / totalPrincipal) : 0;
+
+        let dailyValue = 0;
+        items.forEach(item => {
+          const nav = day[item.fund] || 0;
+          dailyValue += (item.units * ratio) * nav;
+        });
+
+        simulatedData.push({
+          date: day.date,
+          displayDate: day.displayDate || day.date,
+          value: dailyValue,
+        });
+      }
+      return simulatedData;
+    }
+
+    // Fallback: Pure unit accumulation simulation (for new users)
+    const simulatedItems: { fund: string, units: number }[] = [];
+    lastPayrollStr = '';
     
     for (const day of sortedHistory) {
       if (day.date < simulationStart) continue;
 
       const date = new Date(day.date);
-      const month = date.getMonth();
       const year = date.getFullYear();
+      const month = date.getMonth();
       const currentDayStr = `${year}-${month + 1}-${date.getDate()}`;
       
       const payrollDates = getPayrollDates(year, month, salarySettings.paymentCycle);
       
-      if (payrollDates.includes(currentDayStr) && month !== pPrevMonth) {
-        pPrevMonth = month;
-        
+      if (payrollDates.includes(currentDayStr) && currentDayStr !== lastPayrollStr) {
+        lastPayrollStr = currentDayStr;
         const historicalSalary = estimateHistoricalSalary(salarySettings.baseSalary, day.date);
-        const myContrib = historicalSalary * ((salarySettings.voluntaryPercent + 3) / 100);
-        const stateContrib = historicalSalary * 0.03;
-        const totalInvest = myContrib + stateContrib;
+        const totalInvest = historicalSalary * ((salarySettings.voluntaryPercent + 8) / 100);
         const perPaycheck = (salarySettings.paymentCycle === 'biweekly') ? totalInvest / 2 : totalInvest;
 
         Object.entries(salarySettings.targetAllocations).forEach(([fund, percent]) => {
@@ -382,9 +430,9 @@ export const MyPortfolio: React.FC<MyPortfolioProps> = ({ historyData, latestDat
           if (p > 0) {
             const nav = day[fund] || 1;
             const unitsAdded = perPaycheck * (p / 100) / nav;
-            const existingIdx = simulatedItems.findIndex(i => i.fund === fund);
-            if (existingIdx >= 0) {
-              simulatedItems[existingIdx].units += unitsAdded;
+            const existing = simulatedItems.find(i => i.fund === fund);
+            if (existing) {
+              existing.units += unitsAdded;
             } else {
               simulatedItems.push({ fund, units: unitsAdded });
             }
@@ -395,8 +443,7 @@ export const MyPortfolio: React.FC<MyPortfolioProps> = ({ historyData, latestDat
       if (day.date >= cutoffStr) {
         let dailyValue = 0;
         simulatedItems.forEach(item => {
-          const nav = day[item.fund] || 0;
-          dailyValue += nav * item.units;
+          dailyValue += (day[item.fund] || 0) * item.units;
         });
 
         simulatedData.push({
@@ -408,7 +455,7 @@ export const MyPortfolio: React.FC<MyPortfolioProps> = ({ historyData, latestDat
     }
 
     return simulatedData;
-  }, [historyData, portfolioTimeFilter, salarySettings]);
+  }, [historyData, portfolioTimeFilter, salarySettings, items, portfolioValue]);
 
   const benchmarkHistory = useMemo(() => {
     if (!historyData || historyData.length === 0 || activeBenchmarks.length === 0) return {};
@@ -431,37 +478,38 @@ export const MyPortfolio: React.FC<MyPortfolioProps> = ({ historyData, latestDat
     const benchmarks: Record<string, any[]> = {};
     const simulationStart = salarySettings.startDate || '2022-09-01';
     
+    const unscaledSimulatedResults: Record<string, any[]> = {};
+    const strategyLastValues: Record<string, number> = {};
+
     activeBenchmarks.forEach(strategyId => {
       const strategy = customStrategies.find(s => s.id === strategyId);
       if (!strategy) return;
 
       const data: any[] = [];
       const strategyUnits: Record<string, number> = {};
-      let bPrevMonth = -1;
+      let lastBPayrollStr = '';
 
       for (const day of sortedHistory) {
          if (day.date < simulationStart) continue;
 
          const date = new Date(day.date);
-         const month = date.getMonth();
          const year = date.getFullYear();
+         const month = date.getMonth();
          const currentDayStr = `${year}-${month + 1}-${date.getDate()}`;
          
          const payrollDates = getPayrollDates(year, month, salarySettings.paymentCycle);
-         if (payrollDates.includes(currentDayStr) && month !== bPrevMonth) {
-           bPrevMonth = month;
+         if (payrollDates.includes(currentDayStr) && currentDayStr !== lastBPayrollStr) {
+           lastBPayrollStr = currentDayStr;
            
-           const dateObj = new Date(day.date);
-           const current = new Date();
-           const monthsDiff = (current.getFullYear() * 12 + current.getMonth()) - (dateObj.getFullYear() * 12 + dateObj.getMonth());
-           const historicalSalary = salarySettings.baseSalary / Math.pow(1.025, Math.floor(monthsDiff / 6));
-           const totalInvest = historicalSalary * ((salarySettings.voluntaryPercent + 6) / 100);
+           const historicalSalary = estimateHistoricalSalary(salarySettings.baseSalary, day.date);
+           const totalInvest = historicalSalary * ((salarySettings.voluntaryPercent + 8) / 100);
            const perPay = (salarySettings.paymentCycle === 'biweekly') ? totalInvest / 2 : totalInvest;
            
            Object.entries(strategy.allocations).forEach(([fund, percent]) => {
-             if (percent > 0) {
-               const nav = day[fund] || 1;
-               strategyUnits[fund] = (strategyUnits[fund] || 0) + (perPay * (percent / 100) / nav);
+             const p = percent as number;
+             if (p > 0) {
+                const nav = day[fund] || 1;
+                strategyUnits[fund] = (strategyUnits[fund] || 0) + (perPay * (p / 100) / nav);
              }
            });
          }
@@ -471,18 +519,58 @@ export const MyPortfolio: React.FC<MyPortfolioProps> = ({ historyData, latestDat
            Object.entries(strategyUnits).forEach(([fund, units]) => {
               dayTotalVal += units * (day[fund] || 0);
            });
-
-           benchmarks[strategyId] = benchmarks[strategyId] || [];
-           benchmarks[strategyId].push({
-             date: day.date,
-             value: dayTotalVal
-           });
+           data.push({ date: day.date, value: dayTotalVal });
          }
       }
+      unscaledSimulatedResults[strategyId] = data;
+      strategyLastValues[strategyId] = data.length > 0 ? data[data.length - 1].value : 0;
+    });
+
+    // To make benchmarks comparable, we calculate the ratio that would make the CURRENT PLAN simulation match portfolioValue
+    let unscaledCurrentPlanLatest = 1;
+    const currentSimUnits: Record<string, number> = {};
+    let lastTempPayroll = '';
+    
+    for (const day of sortedHistory) {
+      if (day.date < simulationStart) continue;
+      const date = new Date(day.date);
+      const year = date.getFullYear();
+      const month = date.getMonth();
+      const cDayStr = `${year}-${month + 1}-${date.getDate()}`;
+
+      const payrollDates = getPayrollDates(year, month, salarySettings.paymentCycle);
+      if (payrollDates.includes(cDayStr) && cDayStr !== lastTempPayroll) {
+        lastTempPayroll = cDayStr;
+        const histSalary = estimateHistoricalSalary(salarySettings.baseSalary, day.date);
+        const totalInv = histSalary * ((salarySettings.voluntaryPercent + 8) / 100);
+        const pPay = (salarySettings.paymentCycle === 'biweekly') ? totalInv / 2 : totalInv;
+        Object.entries(salarySettings.targetAllocations).forEach(([fund, percent]) => {
+          const p = percent as number;
+          if (p > 0) {
+            const nav = day[fund] || 1;
+            currentSimUnits[fund] = (currentSimUnits[fund] || 0) + (pPay * (p / 100) / nav);
+          }
+        });
+      }
+      unscaledCurrentPlanLatest = 0;
+      Object.entries(currentSimUnits).forEach(([fund, units]) => {
+         unscaledCurrentPlanLatest += units * (day[fund] || 0);
+      });
+    }
+
+    const scalingRatio = (portfolioValue > 0 && unscaledCurrentPlanLatest > 0) ? (portfolioValue / unscaledCurrentPlanLatest) : 1;
+
+    activeBenchmarks.forEach(strategyId => {
+      const data = unscaledSimulatedResults[strategyId] || [];
+      benchmarks[strategyId] = data.map(d => ({
+        ...d,
+        value: d.value * scalingRatio
+      }));
     });
 
     return benchmarks;
-  }, [historyData, portfolioTimeFilter, salarySettings, activeBenchmarks, customStrategies]);
+  }, [historyData, portfolioTimeFilter, salarySettings, activeBenchmarks, customStrategies, portfolioValue]);
+
 
   const combinedChartData = useMemo(() => {
     if (portfolioHistory.length === 0) return [];
@@ -750,7 +838,7 @@ export const MyPortfolio: React.FC<MyPortfolioProps> = ({ historyData, latestDat
           </div>
 
           <div className="bg-blue-50 dark:bg-blue-900/20 p-6 rounded-3xl border border-blue-100 dark:border-blue-800/30">
-            <p className="text-xs text-blue-600 dark:text-blue-400 font-black uppercase tracking-wider mb-2">รัฐสมทบให้</p>
+            <p className="text-xs text-blue-600 dark:text-blue-400 font-black uppercase tracking-wider mb-2">รัฐสมทบ/ชดเชย</p>
             <div className="flex flex-col gap-1">
               <div className="flex items-baseline gap-1">
                 <span className="text-xs font-bold text-blue-500">฿</span>
@@ -758,7 +846,7 @@ export const MyPortfolio: React.FC<MyPortfolioProps> = ({ historyData, latestDat
                   {stateMonthlyContribution.toLocaleString()}
                 </p>
               </div>
-              <p className="text-xs font-bold text-blue-600/60 dark:text-blue-400/60 uppercase">รัฐสมทบคงที่ 3%</p>
+              <p className="text-xs font-bold text-blue-600/60 dark:text-blue-400/60 uppercase">รวมสมทบ 5%</p>
             </div>
           </div>
 
@@ -770,7 +858,7 @@ export const MyPortfolio: React.FC<MyPortfolioProps> = ({ historyData, latestDat
                 {totalMonthlyInvestment.toLocaleString()}
               </p>
             </div>
-            <p className="text-xs font-bold text-indigo-600/60 dark:text-indigo-400/60 uppercase mt-1">รวมออม {salarySettings.voluntaryPercent + 3}% ต่อเดือน</p>
+            <p className="text-xs font-bold text-indigo-600/60 dark:text-indigo-400/60 uppercase mt-1">รวมออม {salarySettings.voluntaryPercent + 8}% ต่อเดือน</p>
           </div>
         </div>
       </section>
@@ -807,54 +895,66 @@ export const MyPortfolio: React.FC<MyPortfolioProps> = ({ historyData, latestDat
         {/* Benchmark Toggles */}
         <div className="flex flex-wrap items-center gap-3 mb-8">
            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mr-2">เปรียบเทียบกับ:</p>
-           {customStrategies.map(bench => (
-             <div key={bench.id} className="relative group">
-               <button
-                onClick={() => {
-                  setActiveBenchmarks(prev => 
-                    prev.includes(bench.id) ? prev.filter(b => b !== bench.id) : [...prev, bench.id]
-                  );
-                }}
-                className={clsx(
-                  "px-3 py-2 rounded-xl text-[10px] font-bold border transition-all flex items-center gap-2",
-                  activeBenchmarks.includes(bench.id)
-                    ? "bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 shadow-sm"
-                    : "bg-transparent border-transparent text-slate-400"
-                )}
+           {customStrategies.map(bench => {
+             const isCustom = bench.id !== 'Steady' && bench.id !== 'Growth' && bench.id !== 'Gold';
+             const isActive = activeBenchmarks.includes(bench.id);
+             
+             return (
+               <div 
+                 key={bench.id} 
+                 className={clsx(
+                   "flex items-center gap-1 p-1 rounded-2xl transition-all border",
+                   isActive 
+                     ? "bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 shadow-sm"
+                     : "bg-transparent border-transparent"
+                 )}
                >
-                 <div className={clsx("w-2 h-2 rounded-full", activeBenchmarks.includes(bench.id) ? "opacity-100" : "opacity-30")} style={{ backgroundColor: bench.color }} />
-                 {bench.name}
-               </button>
-               
-               {/* Context menu for custom strategies */}
-               {bench.id !== 'Steady' && bench.id !== 'Growth' && bench.id !== 'Gold' && (
-                 <div className="absolute -top-1 -right-1 flex gap-1 scale-0 group-hover:scale-100 transition-transform">
-                   <button 
-                     onClick={(e) => {
-                       e.stopPropagation();
-                       setStrategyBeingEdited(bench);
-                       setNewStrategyName(bench.name);
-                       setNewStrategyAllocations(bench.allocations);
-                       setIsCreatingStrategy(true);
-                     }}
-                     className="p-1 bg-indigo-100 dark:bg-indigo-900/40 text-indigo-600 rounded-full shadow-sm hover:bg-indigo-200 transition-colors"
-                   >
-                     <Edit2 className="w-2.5 h-2.5" />
-                   </button>
-                   <button 
-                     onClick={(e) => {
-                       e.stopPropagation();
-                       setCustomStrategies(prev => prev.filter(s => s.id !== bench.id));
-                       setActiveBenchmarks(prev => prev.filter(id => id !== bench.id));
-                     }}
-                     className="p-1 bg-red-100 dark:bg-red-900/40 text-red-600 rounded-full shadow-sm hover:bg-red-200 transition-colors"
-                   >
-                     <Trash2 className="w-2.5 h-2.5" />
-                   </button>
-                 </div>
-               )}
-             </div>
-           ))}
+                 <button
+                   onClick={() => {
+                     setActiveBenchmarks(prev => 
+                       prev.includes(bench.id) ? prev.filter(b => b !== bench.id) : [...prev, bench.id]
+                     );
+                   }}
+                   className={clsx(
+                     "flex-1 flex items-center gap-2 px-2 py-1.5 text-[10px] font-bold transition-colors",
+                     isActive ? "text-slate-800 dark:text-white" : "text-slate-400"
+                   )}
+                 >
+                   <div className={clsx("w-2 h-2 rounded-full", isActive ? "opacity-100" : "opacity-30")} style={{ backgroundColor: bench.color }} />
+                   {bench.name}
+                 </button>
+
+                 {isCustom && (
+                   <div className="flex items-center gap-0.5 pr-1 border-l border-slate-100 dark:border-slate-700/50 ml-1 pl-1">
+                     <button 
+                       onClick={(e) => {
+                         e.stopPropagation();
+                         setStrategyBeingEdited(bench);
+                         setNewStrategyName(bench.name);
+                         setNewStrategyAllocations(bench.allocations);
+                         setIsCreatingStrategy(true);
+                       }}
+                       className="p-2 text-indigo-500 hover:bg-indigo-50 dark:hover:bg-indigo-900/30 rounded-lg transition-colors"
+                     >
+                       <Edit2 className="w-3.5 h-3.5" />
+                     </button>
+                     <button 
+                       onClick={(e) => {
+                         e.stopPropagation();
+                         if (confirm('ยืนยันการลบกลยุทธ์นี้?')) {
+                           setCustomStrategies(prev => prev.filter(s => s.id !== bench.id));
+                           setActiveBenchmarks(prev => prev.filter(id => id !== bench.id));
+                         }
+                       }}
+                       className="p-2 text-red-400 hover:bg-red-50 dark:hover:bg-red-900/30 rounded-lg transition-colors"
+                     >
+                       <Trash2 className="w-3.5 h-3.5" />
+                     </button>
+                   </div>
+                 )}
+               </div>
+             );
+           })}
            {customStrategies.length < 6 && ( // 3 default + 3 custom
              <button 
                onClick={() => {

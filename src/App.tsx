@@ -622,11 +622,11 @@ const DesktopHeader = ({ theme, setTheme, latestData, formatThaiDate }: any) => 
 
           <Link to="/portfolio" className={clsx(
             "flex-1 flex flex-col items-center gap-1.5 py-3 transition-colors relative z-10",
-            pathname === '/portfolio' || pathname === '/profile' ? "text-emerald-600 dark:text-emerald-400" : "text-slate-400 hover:text-slate-600 dark:hover:text-slate-300"
+            pathname === '/portfolio' ? "text-emerald-600 dark:text-emerald-400" : "text-slate-400 hover:text-slate-600 dark:hover:text-slate-300"
           )}>
             <Wallet className="w-5 h-5" />
             <span className="text-[10px] font-black uppercase tracking-tighter">พอร์ต</span>
-            {(pathname === '/portfolio' || pathname === '/profile') && (
+            {pathname === '/portfolio' && (
               <motion.div 
                 layoutId="active-pill"
                 className="absolute inset-x-1 inset-y-1 bg-emerald-50 dark:bg-emerald-500/10 rounded-[1.8rem] -z-10"

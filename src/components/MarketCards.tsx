@@ -147,6 +147,7 @@ export const FearAndGreedCard = () => {
   
 export const AiInsightCarousel = ({ data, allFunds }: any) => {
     const [currentSlide, setCurrentSlide] = useState(0);
+    const [isPaused, setIsPaused] = useState(false);
   
     const insights = useMemo(() => {
       if (!data || data.length < 5) return [];
@@ -166,22 +167,29 @@ export const AiInsightCarousel = ({ data, allFunds }: any) => {
     }, [data, allFunds]);
   
     useEffect(() => {
+      if (isPaused) return;
       const timer = setInterval(() => setCurrentSlide(s => (s + 1) % insights.length), 6000);
       return () => clearInterval(timer);
-    }, [insights.length]);
+    }, [insights.length, isPaused]);
   
     if (!insights.length) return null;
   
     const current = insights[currentSlide];
   
     return (
-      <div className="bg-emerald-50/50 dark:bg-emerald-950/20 border border-emerald-100 dark:border-emerald-800/30 rounded-[20px] p-5 relative overflow-hidden h-[180px]">
+      <div 
+        className="bg-emerald-50/50 dark:bg-emerald-950/20 border border-emerald-100 dark:border-emerald-800/30 rounded-[20px] p-5 relative overflow-hidden h-[180px]"
+        onMouseEnter={() => setIsPaused(true)}
+        onMouseLeave={() => setIsPaused(false)}
+        onTouchStart={() => setIsPaused(true)}
+        onTouchEnd={() => setIsPaused(false)}
+      >
         <div className="flex items-center gap-2 mb-4">
           <Sparkles className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
           <span className="text-[10px] font-black text-emerald-600 dark:text-emerald-400 uppercase tracking-widest">AI Market Analysis</span>
         </div>
   
-        <div className="relative h-24">
+        <div className="relative h-24 touch-pan-y">
           <AnimatePresence mode="wait">
             <motion.div 
               key={currentSlide}
@@ -189,12 +197,23 @@ export const AiInsightCarousel = ({ data, allFunds }: any) => {
               animate={{ opacity: 1, x: 0 }}
               exit={{ opacity: 0, x: -15 }}
               transition={{ duration: 0.3, ease: 'easeInOut' }}
-              className="absolute inset-0 flex flex-col justify-start"
+              drag="x"
+              dragConstraints={{ left: 0, right: 0 }}
+              dragElastic={0.1}
+              onDragEnd={(_, info) => {
+                const threshold = 50;
+                if (info.offset.x > threshold) {
+                  setCurrentSlide(s => (s - 1 + insights.length) % insights.length);
+                } else if (info.offset.x < -threshold) {
+                  setCurrentSlide(s => (s + 1) % insights.length);
+                }
+              }}
+              className="absolute inset-0 flex flex-col justify-start cursor-grab active:cursor-grabbing select-none"
             >
                <h4 className="text-[13.5px] font-bold text-slate-800 dark:text-white mb-1.5 flex items-center gap-2">
                  {current.title}
                </h4>
-               <p className="text-[12.5px] leading-[1.65] text-slate-600 dark:text-slate-300 font-medium line-clamp-4">
+               <p className="text-[12.5px] leading-[1.65] text-slate-600 dark:text-slate-300 font-medium line-clamp-4 pointer-events-none">
                  {current.text}
                </p>
             </motion.div>

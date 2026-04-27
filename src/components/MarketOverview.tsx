@@ -180,7 +180,7 @@ export const MarketOverview: React.FC<MarketOverviewProps> = ({
           </div>
         </div>
         
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
+        <div className="flex overflow-x-auto pb-4 -mx-4 px-4 sm:mx-0 sm:px-0 sm:grid sm:grid-cols-2 md:grid-cols-4 gap-4 no-scrollbar scroll-smooth snap-x">
           <AnimatePresence mode="popLayout">
             {selectedFunds.slice(0, 4).map((fund) => {
               const currentVal = latestData ? latestData[fund] : null;
@@ -196,7 +196,7 @@ export const MarketOverview: React.FC<MarketOverviewProps> = ({
                   animate={{ opacity: 1, scale: 1, y: 0 }}
                   exit={{ opacity: 0, scale: 0.8, y: -20 }}
                   transition={{ duration: 0.3, type: "spring", bounce: 0.4 }}
-                  className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-[20px] p-5 shadow-[0_4px_6px_-1px_rgba(0,0,0,0.05)] hover:border-blue-500 dark:hover:border-blue-500 transition-colors duration-200 flex flex-col justify-between"
+                  className="min-w-[240px] sm:min-w-0 snap-center bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-[20px] p-5 shadow-[0_4px_6px_-1px_rgba(0,0,0,0.05)] hover:border-blue-500 dark:hover:border-blue-500 transition-colors duration-200 flex flex-col justify-between"
                 >
                   <span className="text-[13px] text-slate-500 dark:text-slate-400 font-medium leading-tight h-8 line-clamp-2">
                     {fund}
