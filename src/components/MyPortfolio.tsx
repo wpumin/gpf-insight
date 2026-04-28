@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Wallet, Plus, Trash2, TrendingUp, TrendingDown, Info, Calculator, PieChart, Coins, Calendar, ChevronRight, Settings2, ArrowRight, Sparkles, Loader2, Edit2 } from 'lucide-react';
+import { Wallet, Plus, Trash2, TrendingUp, TrendingDown, Info, Calculator, PieChart, Coins, Calendar, ChevronRight, ChevronDown, Settings2, ArrowRight, Sparkles, Loader2, Edit2 } from 'lucide-react';
 import clsx from 'clsx';
 import { 
   ResponsiveContainer, 
@@ -640,6 +640,60 @@ export const MyPortfolio: React.FC<MyPortfolioProps> = ({ historyData, latestDat
       value: (latestData[item.fund] || 0) * item.units
     })).filter(d => d.value > 0);
   }, [items, latestData]);
+
+  const transactionHistory = useMemo(() => {
+    if (!historyData || historyData.length === 0 || !salarySettings.isAutoEnabled) return [];
+
+    const ascendingHistory = [...historyData].sort((a, b) => a.date.localeCompare(b.date));
+    const simulationStart = salarySettings.startDate || '2022-09-01';
+    
+    let lastPayrollStr = '';
+    const txs: { id: string, date: string, items: { fund: string, amount: number, nav: number, units: number }[], totalAmount: number }[] = [];
+
+    for (const day of ascendingHistory) {
+      if (day.date < simulationStart) continue;
+
+      const date = new Date(day.date);
+      const year = date.getFullYear();
+      const month = date.getMonth();
+      const currentDayStr = `${year}-${month + 1}-${date.getDate()}`;
+      
+      const payrollDates = getPayrollDates(year, month, salarySettings.paymentCycle);
+      
+      if (payrollDates.includes(currentDayStr) && currentDayStr !== lastPayrollStr) {
+        lastPayrollStr = currentDayStr;
+        const historicalSalary = estimateHistoricalSalary(salarySettings.baseSalary, day.date);
+        // Total = 3% (Mandatory) + X% (Voluntary) + 3% (State Contribution) + 2% (State Compensation)
+        const totalInvest = historicalSalary * ((3 + salarySettings.voluntaryPercent + 3 + 2) / 100);
+        const perPaycheck = (salarySettings.paymentCycle === 'biweekly') ? totalInvest / 2 : totalInvest;
+
+        const dayItems: { fund: string, amount: number, nav: number, units: number }[] = [];
+        let actualTotal = 0;
+        
+        Object.entries(salarySettings.targetAllocations || {}).forEach(([fund, percent]) => {
+          const p = percent as number;
+          if (p > 0) {
+            const nav = day[fund] || 1;
+            const amount = perPaycheck * (p / 100);
+            const units = amount / nav;
+            dayItems.push({ fund, amount, nav, units });
+            actualTotal += amount;
+          }
+        });
+        
+        if (dayItems.length > 0) {
+          txs.push({
+            id: currentDayStr,
+            date: day.displayDate || day.date,
+            items: dayItems,
+            totalAmount: actualTotal
+          });
+        }
+      }
+    }
+    
+    return txs.reverse(); // Newest first
+  }, [historyData, salarySettings]);
 
   const COLORS = ['#10B981', '#3B82F6', '#8B5CF6', '#F59E0B', '#EF4444', '#06B6D4', '#EC4899'];
 
@@ -1317,6 +1371,135 @@ export const MyPortfolio: React.FC<MyPortfolioProps> = ({ historyData, latestDat
             )}
           </div>
         </div>
+
+        {/* --- Transaction History --- */}
+        {salarySettings.isAutoEnabled && transactionHistory.length > 0 && (
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-[28px] p-6 shadow-sm flex flex-col h-full lg:col-span-2">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
+              <div className="space-y-1">
+                <h3 className="font-bold text-slate-800 dark:text-white flex items-center gap-2">
+                  <Calendar className="w-5 h-5 text-indigo-500 flex-shrink-0" />
+                  <span>รายการเคลื่อนไหวในบัญชีตามแผนออม</span>
+                </h3>
+                <p className="text-xs text-slate-400 font-medium ml-7 mt-1">รายการจำลองอิงตามรอบเงินเดือนที่คุณตั้งค่าไว้</p>
+              </div>
+              <div className="bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 px-3 py-1.5 rounded-xl text-xs font-bold self-start sm:self-auto shrink-0 flex items-center gap-1">
+                {transactionHistory.length} รอบการออม
+              </div>
+            </div>
+            
+            {/* Desktop View */}
+            <div className="hidden md:block overflow-x-auto">
+              <table className="w-full text-left border-collapse min-w-[600px]">
+                <thead>
+                  <tr className="border-b border-slate-100 dark:border-slate-800">
+                    <th className="pb-3 text-xs font-bold text-slate-400 pl-2 w-32">วันที่ซื้อ</th>
+                    <th className="pb-3 text-xs font-bold text-slate-400">กองทุน</th>
+                    <th className="pb-3 text-xs font-bold text-slate-400 text-right pr-6 w-32">จำนวนเงินสะสม</th>
+                    <th className="pb-3 text-xs font-bold text-slate-400 text-right pr-2 w-48">หน่วยลงทุนที่ได้ (Units)</th>
+                  </tr>
+                </thead>
+                <tbody className="text-sm">
+                  {transactionHistory.slice(0, 10).map((tx, idx) => (
+                    <React.Fragment key={tx.id}>
+                      {tx.items.map((item, itemIdx) => (
+                         <tr key={`${tx.id}-${item.fund}`} className="border-b border-slate-50 dark:border-slate-800/50 hover:bg-slate-50 dark:hover:bg-slate-800/20 transition-colors">
+                           <td className="py-3 pl-2 text-slate-600 dark:text-slate-300 font-medium">
+                             {itemIdx === 0 ? (() => {
+                               try {
+                                 const d = new Date(tx.date);
+                                 if (!isNaN(d.getTime())) return `${format(d, 'd MMM', { locale: th })} ${d.getFullYear() + 543}`;
+                                 return tx.date;
+                               } catch (e) {
+                                 return tx.date;
+                               }
+                             })() : ''}
+                           </td>
+                           <td className="py-3">
+                             <div className="flex items-center gap-2">
+                               <div className="w-1.5 h-1.5 rounded-full bg-indigo-400" />
+                               <span className="text-slate-800 dark:text-white font-bold text-xs">{item.fund}</span>
+                             </div>
+                           </td>
+                           <td className="py-3 text-right pr-6 font-black text-emerald-600 dark:text-emerald-400">
+                             +฿{item.amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                           </td>
+                           <td className="py-3 text-right pr-2 text-slate-500 font-mono text-xs font-medium">
+                             <span className="text-slate-700 dark:text-slate-300">+{item.units.toLocaleString(undefined, { minimumFractionDigits: 4, maximumFractionDigits: 4 })}</span>
+                             <span className="text-[10px] ml-1 opacity-60 block sm:inline">(@ {item.nav.toFixed(4)})</span>
+                           </td>
+                         </tr>
+                      ))}
+                    </React.Fragment>
+                  ))}
+                </tbody>
+              </table>
+              {transactionHistory.length > 10 && (
+                <div className="text-center mt-4 pt-4 border-t border-slate-100 dark:border-slate-800">
+                  <p className="text-xs text-slate-400 font-bold">แสดงเพียง 10 รอบล่าสุด (มีข้อมูลเชิงลึกเพิ่มเติมในรายงานฉบับเต็ม)</p>
+                </div>
+              )}
+            </div>
+
+            {/* Mobile View */}
+            <div className="md:hidden space-y-3">
+              {transactionHistory.slice(0, 10).map((tx) => (
+                <details key={tx.id} className="group bg-slate-50 dark:bg-slate-800/30 rounded-2xl border border-slate-100 dark:border-slate-800 overflow-hidden [&_summary::-webkit-details-marker]:hidden">
+                  <summary className="list-none flex items-center justify-between p-4 cursor-pointer">
+                    <div>
+                      <div className="text-sm font-bold text-slate-800 dark:text-slate-200 flex items-center gap-2">
+                         {(() => {
+                            try {
+                              const d = new Date(tx.date);
+                              if (!isNaN(d.getTime())) return `${format(d, 'd MMM', { locale: th })} ${d.getFullYear() + 543}`;
+                              return tx.date;
+                            } catch (e) {
+                              return tx.date;
+                            }
+                          })()}
+                      </div>
+                      <div className="text-xs text-slate-400 font-medium mt-0.5">
+                        {tx.items.length} รายการ
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-4">
+                      <div className="text-right">
+                        <div className="text-emerald-600 dark:text-emerald-400 font-black text-sm">
+                          +฿{tx.totalAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        </div>
+                      </div>
+                      <ChevronDown className="w-5 h-5 text-slate-400 transition-transform group-open:rotate-180 flex-shrink-0" />
+                    </div>
+                  </summary>
+                  <div className="px-4 pb-4 space-y-3 border-t border-slate-100 dark:border-slate-800 pt-3">
+                    {tx.items.map((item) => (
+                       <div key={`${tx.id}-${item.fund}`} className="flex justify-between items-start text-sm">
+                         <div className="flex items-center gap-2">
+                           <div className="w-1.5 h-1.5 rounded-full bg-indigo-400 mt-1.5 flex-shrink-0" />
+                           <span className="text-slate-700 dark:text-slate-300 font-bold">{item.fund}</span>
+                         </div>
+                         <div className="text-right pl-4">
+                           <div className="font-bold text-emerald-600 dark:text-emerald-400 text-xs">
+                              +฿{item.amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                           </div>
+                           <div className="text-slate-500 font-mono text-[10px] font-medium mt-0.5">
+                             +{item.units.toLocaleString(undefined, { minimumFractionDigits: 4, maximumFractionDigits: 4 })} unit <br/>
+                             <span className="opacity-60">(@ {item.nav.toFixed(4)})</span>
+                           </div>
+                         </div>
+                       </div>
+                    ))}
+                  </div>
+                </details>
+              ))}
+              {transactionHistory.length > 10 && (
+                <div className="text-center mt-3 pt-3">
+                  <p className="text-xs text-slate-400 font-bold">แสดงเพียง 10 รอบล่าสุด</p>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* --- Salary Settings Modal --- */}
