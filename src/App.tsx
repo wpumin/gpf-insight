@@ -298,7 +298,7 @@ function AppContent() {
                   chartDataWithMix={chartDataWithMix} selectedFunds={selectedFunds} allFunds={allFunds}
                   latestData={latestData} previousData={previousData} theme={theme}
                   timeFilter={timeFilter} setTimeFilter={setTimeFilter} toggleFund={toggleFund}
-                  customMix={customMix} formattedData={formattedData} lastSync={lastSync}
+                  customMix={customMix} setCustomMix={setCustomMix} formattedData={formattedData} lastSync={lastSync}
                   COLORS={COLORS} CustomTooltip={CustomTooltip}
                 />
               )
@@ -317,7 +317,6 @@ function AppContent() {
             <Route path="/calculator" element={
               <div className="space-y-6 pb-20">
                  <AlertMessenger data={formattedData} allFunds={allFunds} />
-                 <CustomMixBuilder allFunds={allFunds} onMixChange={setCustomMix} />
                  <DynamicHoldSimulator data={formattedData} allFunds={allFunds} customMix={customMix} />
               </div>
             } />

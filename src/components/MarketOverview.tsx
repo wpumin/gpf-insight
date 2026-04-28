@@ -6,6 +6,7 @@ import { TrendingUp, TrendingDown, Sparkles, Activity, Gauge, Coffee } from 'luc
 import { motion, AnimatePresence } from 'motion/react';
 import clsx from 'clsx';
 import { FearAndGreedCard, AiInsightCarousel, ActivityCard } from './MarketCards';
+import { CustomMixBuilder } from './InvestmentTools';
 
 interface MarketOverviewProps {
   chartDataWithMix: any[];
@@ -18,6 +19,7 @@ interface MarketOverviewProps {
   setTimeFilter: (val: any) => void;
   toggleFund: (fund: string) => void;
   customMix: any[];
+  setCustomMix: (mix: any[]) => void;
   formattedData: any[];
   lastSync: string | null;
   COLORS: string[];
@@ -26,11 +28,16 @@ interface MarketOverviewProps {
 
 export const MarketOverview: React.FC<MarketOverviewProps> = ({
   chartDataWithMix, selectedFunds, allFunds, latestData, previousData,
-  theme, timeFilter, setTimeFilter, toggleFund, customMix,
+  theme, timeFilter, setTimeFilter, toggleFund, customMix, setCustomMix,
   formattedData, lastSync, COLORS, CustomTooltip
 }) => {
   return (
     <div className="grid grid-cols-1 lg:grid-cols-4 gap-4 auto-rows-max pb-20">
+      {/* 2026 Strategy Simulation - NEW POSITONING */}
+      <div className="lg:col-span-4 order-0 mb-2">
+         <CustomMixBuilder allFunds={allFunds} onMixChange={setCustomMix} data={formattedData} />
+      </div>
+
       {/* --- 1. Interactive Chart Section --- */}
       <div className="lg:col-span-3 order-1 lg:order-1 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-[20px] p-5 shadow-[0_4px_6px_-1px_rgba(0,0,0,0.05)] hover:border-indigo-500 dark:hover:border-indigo-500 transition-colors duration-200 flex flex-col min-h-[400px]">
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-4">

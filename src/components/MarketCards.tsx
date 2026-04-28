@@ -94,14 +94,16 @@ export const FearAndGreedCard = () => {
     const sentiment = score !== null ? getSentiment(score) : { text: 'Loading...', color: 'text-slate-400', bg: 'bg-slate-100' };
   
     return (
-      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-[24px] p-5 shadow-sm">
-        <div className="flex items-center justify-between mb-4">
-          <div className="flex items-center gap-2">
-            <Gauge className="w-5 h-5 text-indigo-500" />
-            <h3 className="text-xs font-black text-slate-800 dark:text-slate-200 uppercase tracking-widest leading-none">Fear & Greed Index</h3>
+      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-[32px] p-6 shadow-sm overflow-hidden relative group">
+        <div className="flex items-center justify-between mb-6">
+          <div className="flex items-center gap-3">
+            <div className="p-2 bg-indigo-50 dark:bg-indigo-900/30 rounded-xl">
+              <Gauge className="w-5 h-5 text-indigo-500" />
+            </div>
+            <h3 className="text-xs font-black text-slate-800 dark:text-slate-200 uppercase tracking-widest leading-none">Market Sentiment</h3>
           </div>
           {lastUpdated && (
-            <div className="flex items-center gap-1 text-[9px] text-slate-400 font-bold uppercase">
+            <div className="flex items-center gap-1 text-[9px] text-slate-400 font-bold uppercase bg-slate-50 dark:bg-slate-800 px-2 py-1 rounded-full border border-slate-100 dark:border-slate-700/50">
               <Clock className="w-3 h-3" />
               <span>{format(parseISO(lastUpdated), 'HH:mm')}</span>
             </div>
@@ -178,15 +180,17 @@ export const AiInsightCarousel = ({ data, allFunds }: any) => {
   
     return (
       <div 
-        className="bg-emerald-50/50 dark:bg-emerald-950/20 border border-emerald-100 dark:border-emerald-800/30 rounded-[20px] p-5 relative overflow-hidden h-[180px]"
+        className="bg-emerald-50/50 dark:bg-emerald-950/20 border border-emerald-100 dark:border-emerald-800/30 rounded-[32px] p-6 relative overflow-hidden h-[200px] shadow-sm"
         onMouseEnter={() => setIsPaused(true)}
         onMouseLeave={() => setIsPaused(false)}
         onTouchStart={() => setIsPaused(true)}
         onTouchEnd={() => setIsPaused(false)}
       >
-        <div className="flex items-center gap-2 mb-4">
-          <Sparkles className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
-          <span className="text-[10px] font-black text-emerald-600 dark:text-emerald-400 uppercase tracking-widest">AI Market Analysis</span>
+        <div className="flex items-center gap-2 mb-6">
+          <div className="p-1.5 bg-emerald-500/10 dark:bg-emerald-500/20 rounded-lg">
+            <Sparkles className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+          </div>
+          <span className="text-[10px] font-black text-emerald-700 dark:text-emerald-400 uppercase tracking-[0.2em]">Market Intelligence</span>
         </div>
   
         <div className="relative h-24 touch-pan-y">
@@ -241,15 +245,17 @@ export const ActivityCard = ({ lastSync, latestData }: any) => {
     const isOnline = !!latestData;
     
     return (
-      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-[20px] p-4 shadow-sm">
-        <div className="flex items-center justify-between mb-4">
+      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-[32px] p-6 shadow-sm">
+        <div className="flex items-center justify-between mb-6">
           <div className="flex items-center gap-2">
-            <Activity className="w-4 h-4 text-emerald-500" />
-            <h3 className="text-xs font-bold text-slate-800 dark:text-slate-200 uppercase tracking-widest">System Status</h3>
+            <div className="p-2 bg-emerald-50 dark:bg-emerald-900/30 rounded-xl">
+              <Activity className="w-4 h-4 text-emerald-500" />
+            </div>
+            <h3 className="text-xs font-black text-slate-800 dark:text-slate-200 uppercase tracking-widest">System Health</h3>
           </div>
-          <div className="flex items-center gap-1.5 bg-emerald-50 dark:bg-emerald-900/30 px-2 py-0.5 rounded-full">
+          <div className="flex items-center gap-1.5 bg-emerald-50 dark:bg-emerald-900/30 px-3 py-1 rounded-full border border-emerald-100 dark:border-emerald-800/50 shadow-sm">
             <div className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse" />
-            <span className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400 uppercase">Live</span>
+            <span className="text-[10px] font-black text-emerald-600 dark:text-emerald-400 uppercase tracking-wider">Operational</span>
           </div>
         </div>
         

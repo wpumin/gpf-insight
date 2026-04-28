@@ -12,7 +12,9 @@ import {
   ArrowDownRight,
   TrendingUp,
   Info,
-  RefreshCcw
+  RefreshCcw,
+  AreaChart as AreaChartIcon,
+  Zap
 } from 'lucide-react';
 import { clsx } from 'clsx';
 
@@ -33,10 +35,12 @@ interface AlertSignal {
 // --- Custom Mix Builder Component ---
 export const CustomMixBuilder = ({ 
   allFunds, 
-  onMixChange 
+  onMixChange,
+  data = []
 }: { 
   allFunds: string[], 
-  onMixChange: (mix: FundAllocation[]) => void 
+  onMixChange: (mix: FundAllocation[]) => void,
+  data?: any[]
 }) => {
   const [allocations, setAllocations] = useState<FundAllocation[]>([]);
   const [isOpen, setIsOpen] = useState(false);
@@ -55,9 +59,22 @@ export const CustomMixBuilder = ({
   };
 
   const updatePercentage = (fund: string, value: number) => {
-    setAllocations(prev => prev.map(a => 
-      a.fund === fund ? { ...a, percentage: Math.max(0, Math.min(100, value)) } : a
-    ));
+    setAllocations(prev => {
+      const currentVal = prev.find(a => a.fund === fund)?.percentage || 0;
+      const otherTotal = prev.reduce((sum, a) => sum + (a.fund !== fund ? a.percentage : 0), 0);
+      
+      const nextAllocations = [...prev];
+      const targetIdx = nextAllocations.findIndex(a => a.fund === fund);
+      
+      if (value + otherTotal > 100) {
+        // Simple cap for this simulator to keep it predictable for user testing
+        nextAllocations[targetIdx] = { ...nextAllocations[targetIdx], percentage: 100 - otherTotal };
+      } else {
+        nextAllocations[targetIdx] = { ...nextAllocations[targetIdx], percentage: value };
+      }
+      
+      return nextAllocations;
+    });
   };
 
   useEffect(() => {
@@ -71,22 +88,36 @@ export const CustomMixBuilder = ({
   const availableFunds = allFunds.filter(f => !allocations.find(a => a.fund === f));
 
   return (
-    <div className="bg-white dark:bg-slate-900 rounded-[20px] shadow-sm border border-slate-200 dark:border-slate-800 p-5 mt-4 overflow-hidden">
-      <div className="flex justify-between items-center mb-4">
-        <div className="flex items-center gap-2">
-          <div className="p-2 bg-indigo-100 dark:bg-indigo-900/30 rounded-lg">
-            <PieChartIcon className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
+    <div className="bg-white dark:bg-slate-900 rounded-[32px] shadow-sm border border-slate-200 dark:border-slate-800 p-6 mt-4 overflow-hidden relative">
+      {totalPercentage === 100 && (
+        <div className="absolute top-0 left-0 right-0 h-1 bg-emerald-500 animate-pulse z-10" />
+      )}
+      
+      <div className="flex items-center justify-between gap-3 mb-6">
+        <div className="flex items-center gap-3 min-w-0">
+          <div className="p-2.5 sm:p-3 bg-indigo-50 dark:bg-indigo-900/30 rounded-2xl border border-indigo-100 dark:border-indigo-800 shrink-0">
+            <PieChartIcon className="w-4 h-4 sm:w-5 sm:h-5 text-indigo-600 dark:text-indigo-400" />
           </div>
-          <div>
-            <h3 className="text-sm font-bold text-slate-800 dark:text-slate-200">จำลองพอร์ตลงทุน (Custom Mix)</h3>
-            <p className="text-[11px] text-slate-500 font-medium">จำลองพอร์ตที่ผสมสัดส่วนด้วยตัวเอง (รวมให้ครบ 100%)</p>
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
+              <h3 className="text-sm sm:text-base font-black text-slate-800 dark:text-slate-200 tracking-tight truncate">GPF Strategy Simulator</h3>
+              {totalPercentage === 100 && (
+                <span className="inline-flex items-center gap-1 px-1.5 sm:px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 text-[8px] font-black uppercase tracking-widest animate-pulse shrink-0">
+                  Live
+                </span>
+              )}
+            </div>
+            <p className="text-[10px] sm:text-[11px] text-slate-400 font-bold uppercase tracking-wider mt-0.5 truncate">จำลองสัดส่วนพอร์ตผสมส่วนตัว</p>
           </div>
         </div>
         <button 
           onClick={() => setIsOpen(!isOpen)}
-          className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-full transition-colors"
+          className={clsx(
+            "p-2.5 rounded-xl transition-all border shadow-sm shrink-0",
+            isOpen ? "bg-indigo-600 text-white border-indigo-500" : "bg-white dark:bg-slate-800 text-slate-400 border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800/80"
+          )}
         >
-          <Settings2 className={clsx("w-5 h-5 text-slate-400 transition-transform", isOpen && "rotate-90")} />
+          <Settings2 className={clsx("w-4 h-4 sm:w-5 sm:h-5 transition-transform duration-300", isOpen && "rotate-180")} />
         </button>
       </div>
 
@@ -96,74 +127,88 @@ export const CustomMixBuilder = ({
             initial={{ height: 0, opacity: 0 }}
             animate={{ height: 'auto', opacity: 1 }}
             exit={{ height: 0, opacity: 0 }}
-            className="space-y-4"
+            className="space-y-6"
           >
-            <div className="grid grid-cols-1 gap-3">
+            <div className="space-y-3">
               {allocations.map((alloc) => (
-                <div key={alloc.fund} className="flex items-center gap-3 bg-slate-50 dark:bg-slate-800/50 p-3 rounded-xl border border-slate-200 dark:border-slate-700/50">
-                  <div className="flex-1 min-w-0">
-                    <p className="text-xs font-bold text-slate-700 dark:text-slate-200 truncate">{alloc.fund}</p>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <input 
-                      type="number" 
-                      value={alloc.percentage}
-                      onChange={(e) => updatePercentage(alloc.fund, parseInt(e.target.value) || 0)}
-                      className="w-16 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg p-1.5 text-center text-xs font-bold focus:ring-2 focus:ring-indigo-500 outline-none"
-                    />
-                    <span className="text-xs font-bold text-slate-400">%</span>
+                <div key={alloc.fund} className="flex flex-col gap-2 bg-slate-50 dark:bg-slate-800/30 p-4 rounded-2xl border border-slate-100 dark:border-slate-800/50 group">
+                  <div className="flex items-center justify-between">
+                    <p className="text-xs font-black text-slate-700 dark:text-slate-200 truncate pr-4">{alloc.fund}</p>
                     <button 
                       onClick={() => removeFund(alloc.fund)}
-                      className="p-1.5 hover:bg-red-100 dark:hover:bg-red-900/30 text-red-500 rounded-lg transition-colors"
+                      className="p-1.5 hover:bg-red-50 dark:hover:bg-red-900/20 text-red-400 rounded-lg transition-colors opacity-0 group-hover:opacity-100"
                     >
-                      <Plus className="w-4 h-4 rotate-45" />
+                      <Minus className="w-3.5 h-3.5" />
                     </button>
+                  </div>
+                  <div className="flex items-center gap-4">
+                    <input 
+                      type="range"
+                      min="0"
+                      max="100"
+                      step="5"
+                      value={alloc.percentage}
+                      onChange={(e) => updatePercentage(alloc.fund, parseInt(e.target.value) || 0)}
+                      className="flex-1 h-1.5 bg-slate-200 dark:bg-slate-700 rounded-lg appearance-none cursor-pointer accent-indigo-600"
+                    />
+                    <div className="w-12 text-right">
+                      <span className="text-sm font-black text-indigo-600 dark:text-indigo-400">{alloc.percentage}%</span>
+                    </div>
                   </div>
                 </div>
               ))}
             </div>
 
-            {availableFunds.length > 0 && (
+            {availableFunds.length > 0 && allocations.length < 5 && (
               <div className="relative group">
                 <select 
                   onChange={(e) => {
                     if (e.target.value) addFund(e.target.value);
                     e.target.value = "";
                   }}
-                  className="w-full bg-slate-50 dark:bg-slate-800 border-2 border-dashed border-slate-200 dark:border-slate-700 rounded-xl p-3 text-xs font-bold text-slate-500 appearance-none cursor-pointer hover:border-indigo-400 transition-colors"
+                  className="w-full bg-indigo-50/50 dark:bg-indigo-900/10 border-2 border-dashed border-indigo-200 dark:border-indigo-800/50 rounded-2xl p-4 text-[11px] font-black text-indigo-500 uppercase tracking-widest appearance-none cursor-pointer hover:bg-indigo-50 dark:hover:bg-indigo-900/20 hover:border-indigo-400 transition-all text-center"
                 >
-                  <option value="">+ เพิ่มแผนการลงทุนในพอร์ตผสม...</option>
+                  <option value="">+ เพิ่มกองทุนในพอร์ตจำลอง</option>
                   {availableFunds.map(f => <option key={f} value={f}>{f}</option>)}
                 </select>
-                <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none">
-                  <Plus className="w-4 h-4 text-slate-400" />
-                </div>
               </div>
             )}
 
-            <div className="flex items-center justify-between p-3 bg-indigo-50 dark:bg-indigo-900/20 rounded-xl border border-indigo-100 dark:border-indigo-800/50">
-              <span className="text-xs font-bold text-indigo-700 dark:text-indigo-300">สัดส่วนรวม</span>
-              <div className="flex items-center gap-2">
-                <div className="w-24 h-2 bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden">
-                  <div 
-                    className={clsx(
-                      "h-full transition-all duration-500",
-                      totalPercentage === 100 ? "bg-emerald-500" : "bg-orange-500"
-                    )}
-                    style={{ width: `${Math.min(100, totalPercentage)}%` }}
-                  />
-                </div>
-                <span className={clsx("text-xs font-black", totalPercentage === 100 ? "text-emerald-600" : "text-orange-600")}>
+            <div className="flex flex-col gap-3 p-5 bg-slate-900 dark:bg-black rounded-3xl border border-slate-800 shadow-xl">
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">สัดส่วนรวมพอร์ตจำลอง (Total)</span>
+                <span className={clsx(
+                  "text-lg font-black",
+                  totalPercentage === 100 ? "text-emerald-400" : "text-amber-400"
+                )}>
                   {totalPercentage}%
                 </span>
               </div>
+              <div className="h-2 bg-slate-800 rounded-full overflow-hidden">
+                <motion.div 
+                  initial={{ width: 0 }}
+                  animate={{ width: `${Math.min(100, totalPercentage)}%` }}
+                  className={clsx(
+                    "h-full transition-all duration-500",
+                    totalPercentage === 100 ? "bg-emerald-500" : "bg-amber-500"
+                  )}
+                />
+              </div>
+              {totalPercentage !== 100 ? (
+                <p className="text-[10px] text-amber-500/80 font-bold flex items-center justify-center gap-1 mt-1 animate-pulse">
+                  <AlertCircle className="w-3 h-3" /> กรุณาปรับให้ครบ 100% เพื่อประมวลผล
+                </p>
+              ) : (
+                <div className="mt-4 animate-in fade-in zoom-in duration-500">
+                  <div className="p-3 bg-emerald-500/10 rounded-2xl border border-emerald-500/20">
+                     <p className="text-[11px] text-emerald-400 font-bold leading-relaxed flex items-start gap-2">
+                       <Zap className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+                       เมื่อสัดส่วนครบ 100% ข้อมูลจำลองนี้จะถูกส่งไปแสดงผลเปรียบเทียบในกราฟราคา NAV ที่หน้าหลักโดยอัตโนมัติ (เป็นเส้นประ "My Mix")
+                     </p>
+                  </div>
+                </div>
+              )}
             </div>
-
-            {totalPercentage !== 100 && (
-              <p className="text-[10px] text-orange-500 font-bold flex items-center gap-1">
-                <AlertCircle className="w-3 h-3" /> กรุณาปรับสัดส่วนรวมให้เท่ากับ 100% เพื่อแสดงกราฟ
-              </p>
-            )}
           </motion.div>
         )}
       </AnimatePresence>
@@ -242,48 +287,61 @@ export const AlertMessenger = ({ data, allFunds }: { data: any[], allFunds: stri
   const displayedSignals = signals.slice(0, visibleCount);
 
   return (
-    <div className="space-y-3">
-      <div className="flex items-center justify-between mb-1 px-1">
+    <div className="space-y-4">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 px-2">
         <div className="flex items-center gap-2">
-          <Bell className="w-4 h-4 text-indigo-500" />
-          <h3 className="text-xs font-bold text-slate-800 dark:text-slate-200 uppercase tracking-tight">สัญญาณการสับเปลี่ยนแผน (Strategy)</h3>
+          <Bell className="w-5 h-5 text-indigo-500" />
+          <h3 className="text-base font-black text-slate-800 dark:text-slate-200 tracking-tight">AI Strategy Signals</h3>
         </div>
-        <span className="text-[11px] text-slate-400 font-bold bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded-full border border-slate-200 dark:border-slate-700">อัปเดตข้อมูลประจำวัน</span>
+        <div className="flex items-center gap-2">
+          <span className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest bg-slate-100 dark:bg-slate-800 px-3 py-1 rounded-full border border-slate-200 dark:border-slate-700/50 shadow-sm">Daily Intelligence Update</span>
+        </div>
       </div>
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <AnimatePresence mode="popLayout">
           {displayedSignals.map((signal, idx) => (
             <motion.div
               key={`${signal.fund}-${idx}`}
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.95 }}
               className={clsx(
-                "p-4 rounded-2xl border transition-all duration-200 flex gap-3 items-start shadow-sm",
+                "p-6 rounded-[32px] border transition-all duration-300 flex gap-4 items-start shadow-sm hover:shadow-md",
                 signal.type === 'PANIC' 
-                  ? "bg-red-50 dark:bg-red-900/10 border-red-200 dark:border-red-800/50" 
-                  : "bg-emerald-50 dark:bg-emerald-900/10 border-emerald-200 dark:border-emerald-800/50"
+                  ? "bg-white dark:bg-slate-900 border-red-100 dark:border-red-900/30" 
+                  : "bg-white dark:bg-slate-900 border-emerald-100 dark:border-emerald-900/30"
               )}
             >
               <div className={clsx(
-                "shrink-0 p-2 rounded-lg",
-                signal.type === 'PANIC' ? "bg-red-100 dark:bg-red-900/30" : "bg-emerald-100 dark:bg-emerald-900/30"
+                "shrink-0 p-3 rounded-2xl shadow-sm border",
+                signal.type === 'PANIC' 
+                  ? "bg-red-50 dark:bg-red-900/20 border-red-100 dark:border-red-800/50" 
+                  : "bg-emerald-50 dark:bg-emerald-900/20 border-emerald-100 dark:border-emerald-800/50"
               )}>
                 {signal.icon}
               </div>
-              <div>
-                <div className="flex items-center gap-2 mb-1.5">
+              <div className="min-w-0">
+                <div className="flex items-center justify-between mb-2">
                   <span className={clsx(
-                    "text-[10px] font-black uppercase tracking-widest px-1.5 py-0.5 rounded shadow-sm",
-                    signal.type === 'PANIC' ? "bg-red-600 text-white" : "bg-emerald-600 text-white"
+                    "text-[9px] font-black uppercase tracking-[0.15em] px-2 py-0.5 rounded-full shadow-sm",
+                    signal.type === 'PANIC' ? "bg-red-500 text-white" : "bg-emerald-500 text-white"
                   )}>
-                    {signal.type === 'PANIC' ? 'คำเตือนการสับเปลี่ยน' : 'คำแนะนำกลยุทธ์'}
+                    {signal.type === 'PANIC' ? 'Action Recommended' : 'Momentum Insight'}
                   </span>
-                  <span className="text-[10px] font-black text-slate-500">{(signal.change >= 0 ? '+' : '')}{signal.change.toFixed(2)}%</span>
+                  <span className={clsx(
+                    "text-xs font-black",
+                    signal.change >= 0 ? "text-emerald-500" : "text-red-500"
+                  )}>
+                    {(signal.change >= 0 ? '+' : '')}{signal.change.toFixed(2)}%
+                  </span>
                 </div>
-                <p className="text-[12px] font-bold leading-relaxed text-slate-800 dark:text-slate-100">
+                <p className="text-sm font-bold leading-relaxed text-slate-800 dark:text-slate-100">
                   {signal.message}
                 </p>
+                <div className="mt-3 pt-3 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between">
+                   <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{signal.fund}</p>
+                   <ArrowUpRight className="w-4 h-4 text-slate-300" />
+                </div>
               </div>
             </motion.div>
           ))}
@@ -293,9 +351,9 @@ export const AlertMessenger = ({ data, allFunds }: { data: any[], allFunds: stri
       {visibleCount < signals.length && (
         <button 
           onClick={() => setVisibleCount(prev => prev + 2)}
-          className="w-full py-2.5 mt-1 text-[11px] font-black text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 bg-slate-100 dark:bg-slate-800/60 rounded-xl transition-all border border-slate-200 dark:border-slate-700/50 hover:border-slate-300 dark:hover:border-slate-600"
+          className="w-full py-4 text-xs font-black text-slate-500 hover:text-indigo-600 dark:hover:text-indigo-400 bg-white dark:bg-slate-900 rounded-3xl transition-all border border-slate-200 dark:border-slate-800/80 shadow-sm hover:shadow-md hover:border-indigo-200"
         >
-          แสดงสัญญาณเพิ่มเติม ({signals.length - visibleCount})
+          วิเคราะห์สัญญาณเพิ่มเติม ({signals.length - visibleCount})
         </button>
       )}
     </div>

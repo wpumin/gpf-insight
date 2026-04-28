@@ -1471,20 +1471,29 @@ export const MyPortfolio: React.FC<MyPortfolioProps> = ({ historyData, latestDat
                       <ChevronDown className="w-5 h-5 text-slate-400 transition-transform group-open:rotate-180 flex-shrink-0" />
                     </div>
                   </summary>
-                  <div className="px-4 pb-4 space-y-3 border-t border-slate-100 dark:border-slate-800 pt-3">
+                  <div className="px-4 pb-4 space-y-4 border-t border-slate-100 dark:border-slate-800/50 pt-4">
                     {tx.items.map((item) => (
-                       <div key={`${tx.id}-${item.fund}`} className="flex justify-between items-start text-sm">
-                         <div className="flex items-center gap-2">
-                           <div className="w-1.5 h-1.5 rounded-full bg-indigo-400 mt-1.5 flex-shrink-0" />
-                           <span className="text-slate-700 dark:text-slate-300 font-bold">{item.fund}</span>
-                         </div>
-                         <div className="text-right pl-4">
-                           <div className="font-bold text-emerald-600 dark:text-emerald-400 text-xs">
-                              +฿{item.amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                       <div key={`${tx.id}-${item.fund}`} className="flex justify-between items-start">
+                         <div className="flex items-start gap-3 min-w-0 flex-1">
+                           <div className="w-1.5 h-1.5 rounded-full bg-indigo-400 mt-2 flex-shrink-0" />
+                           <div className="min-w-0">
+                             <p className="text-[11px] text-slate-400 font-black uppercase tracking-wider mb-0.5">กองทุน</p>
+                             <p className="text-slate-800 dark:text-slate-200 font-bold text-sm leading-tight leading-none truncate">{item.fund}</p>
                            </div>
-                           <div className="text-slate-500 font-mono text-[10px] font-medium mt-0.5">
-                             +{item.units.toLocaleString(undefined, { minimumFractionDigits: 4, maximumFractionDigits: 4 })} unit <br/>
-                             <span className="opacity-60">(@ {item.nav.toFixed(4)})</span>
+                         </div>
+                         <div className="text-right pl-4 shrink-0">
+                           <div className="mb-2">
+                             <p className="text-[10px] text-slate-400 font-black uppercase tracking-wider mb-0.5">จำนวนเงิน</p>
+                             <p className="font-extrabold text-emerald-600 dark:text-emerald-400 text-sm">
+                               +฿{item.amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                             </p>
+                           </div>
+                           <div>
+                             <p className="text-[10px] text-slate-400 font-black uppercase tracking-wider mb-0.5">หน่วยลงทุน (Units)</p>
+                             <p className="text-slate-700 dark:text-slate-300 font-mono text-xs font-bold">
+                               +{item.units.toLocaleString(undefined, { minimumFractionDigits: 4, maximumFractionDigits: 4 })}
+                             </p>
+                             <p className="text-[9px] text-slate-400 font-medium">@ {item.nav.toFixed(4)}</p>
                            </div>
                          </div>
                        </div>

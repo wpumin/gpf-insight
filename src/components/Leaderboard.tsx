@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Trophy, ChevronRight, User as UserIcon, PieChart, Wallet, Calendar, TrendingUp, Search, Info, Share2 } from 'lucide-react';
+import { Trophy, ChevronRight, User as UserIcon, PieChart, Wallet, Calendar, TrendingUp, Search, Info, Share2, Loader2 } from 'lucide-react';
 import clsx from 'clsx';
 import { collection, query, orderBy, onSnapshot, limit, doc, getDoc } from 'firebase/firestore';
 import { db } from '../firebase';
@@ -379,7 +379,7 @@ export const Leaderboard: React.FC<LeaderboardProps> = ({ historyData = [], late
             </section>
 
             {/* List */}
-            <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-[32px] overflow-hidden shadow-sm mx-2 sm:mx-0">
+            <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-[32px] overflow-hidden shadow-sm">
                 <div className="p-4 border-b border-slate-100 dark:border-slate-800 flex items-center gap-3">
                     <div className="flex-1 relative">
                         <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
@@ -395,10 +395,17 @@ export const Leaderboard: React.FC<LeaderboardProps> = ({ historyData = [], late
 
                 <div className="divide-y divide-slate-100 dark:divide-slate-800">
                     {loading ? (
-                        <div className="p-20 text-center text-slate-400 font-bold animate-pulse">กำลังโหลดผลงานเพื่อนสมาชิก...</div>
+                        <div className="py-24 flex flex-col items-center justify-center space-y-4">
+                            <Loader2 className="w-8 h-8 text-amber-500 animate-spin" />
+                            <p className="text-slate-400 font-bold animate-pulse">กำลังเรียกข้อมูลทำเนียบนักลงทุน...</p>
+                        </div>
                     ) : filteredCompetitors.length === 0 ? (
-                        <div className="p-20 text-center">
-                            <p className="text-slate-400 font-bold">ไม่พบรายชื่อที่ค้นหา</p>
+                        <div className="py-24 flex flex-col items-center justify-center text-center px-6">
+                            <div className="w-16 h-16 bg-slate-100 dark:bg-slate-800 rounded-2xl flex items-center justify-center mb-4 text-slate-300">
+                                <Search className="w-8 h-8" />
+                            </div>
+                            <h3 className="font-bold text-slate-800 dark:text-white">ไม่พบข้อมูล</h3>
+                            <p className="text-sm text-slate-500 mt-1">ไม่พบรายชื่อเพื่อนสมาชิกที่คุณค้นหา ลองเปลี่ยนคำค้นหาดูใหม่</p>
                         </div>
                     ) : (
                         filteredCompetitors.map((comp, idx) => {
@@ -662,7 +669,7 @@ export const Leaderboard: React.FC<LeaderboardProps> = ({ historyData = [], late
                 )}
             </AnimatePresence>
 
-            <div className="bg-emerald-50 dark:bg-emerald-950/20 p-6 rounded-[32px] border border-emerald-100 dark:border-emerald-800 text-emerald-800 dark:text-emerald-300 mx-2 sm:mx-0 shadow-sm shadow-emerald-500/5">
+            <div className="bg-emerald-50 dark:bg-emerald-950/20 p-6 rounded-[32px] border border-emerald-100 dark:border-emerald-800 text-emerald-800 dark:text-emerald-300 shadow-sm shadow-emerald-500/5">
                 <div className="flex items-center gap-3 mb-2">
                     <Info className="w-5 h-5 shrink-0" />
                     <h4 className="font-black text-sm uppercase tracking-wider">เกี่ยวกับการจัดอันดับ</h4>
