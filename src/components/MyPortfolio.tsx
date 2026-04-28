@@ -48,11 +48,25 @@ interface MyPortfolioProps {
 import { useAuth } from '../contexts/AuthContext';
 import { doc, getDoc, setDoc, onSnapshot } from 'firebase/firestore';
 import { db } from '../firebase';
+import { format } from 'date-fns';
+import { th } from 'date-fns/locale';
 
 // --- Payroll Recognition Helpers ---
 const isBusinessDay = (date: Date) => {
   const day = date.getDay();
   return day !== 0 && day !== 6;
+};
+
+const addBusinessDays = (date: Date, days: number) => {
+  let result = new Date(date);
+  let count = 0;
+  while (count < days) {
+    result.setDate(result.getDate() + 1);
+    if (isBusinessDay(result)) {
+      count++;
+    }
+  }
+  return result;
 };
 
 const estimateHistoricalSalary = (baseSalary: number, dateStr: string) => {
@@ -65,30 +79,66 @@ const estimateHistoricalSalary = (baseSalary: number, dateStr: string) => {
 const getPayrollDates = (year: number, month: number, paymentCycle: 'monthly' | 'biweekly') => {
   const dates: string[] = [];
   
+  const getSubBusinessDays = (date: Date, days: number) => {
+    let result = new Date(date);
+    let count = 0;
+    while (count < days) {
+      result.setDate(result.getDate() - 1);
+      if (isBusinessDay(result)) {
+        count++;
+      }
+    }
+    return result;
+  };
+
+  const getLastBusinessDay = (y: number, m: number) => {
+    const lastDay = new Date(y, m + 1, 0);
+    while (!isBusinessDay(lastDay)) {
+      lastDay.setDate(lastDay.getDate() - 1);
+    }
+    return lastDay;
+  };
+
   // Round 1: Mid-month (16th)
   if (paymentCycle === 'biweekly') {
     let d16 = new Date(year, month, 16);
     while (!isBusinessDay(d16)) {
       d16.setDate(d16.getDate() - 1);
     }
-    dates.push(`${d16.getFullYear()}-${d16.getMonth() + 1}-${d16.getDate()}`);
+    dates.push(format(d16, 'yyyy-M-d'));
   }
 
-  // Round 2: End of month (3 business days before end)
-  const lastDay = new Date(year, month + 1, 0);
-  let count = 0;
-  let dEnd = new Date(lastDay);
-  while (count < 3) {
-    if (isBusinessDay(dEnd)) {
-      count++;
-    }
-    if (count < 3) {
-      dEnd.setDate(dEnd.getDate() - 1);
-    }
-  }
-  dates.push(`${dEnd.getFullYear()}-${dEnd.getMonth() + 1}-${dEnd.getDate()}`);
+  // Round 2: End of month (3rd business day before the last business day of the month)
+  const lbd = getLastBusinessDay(year, month);
+  const paydayRound2 = getSubBusinessDays(lbd, 3);
+  dates.push(format(paydayRound2, 'yyyy-M-d'));
   
   return dates;
+};
+
+const getNextDisplayDate = (paymentCycle: 'monthly' | 'biweekly') => {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = now.getMonth();
+  
+  // Potential paydays: this month or next month
+  let candidates: Date[] = [];
+  [month, month + 1].forEach(m => {
+    const dates = getPayrollDates(year, m, paymentCycle);
+    dates.forEach(d => candidates.push(new Date(d)));
+  });
+
+  // Sort candidates
+  candidates.sort((a, b) => a.getTime() - b.getTime());
+
+  for (let payday of candidates) {
+    const displayDate = addBusinessDays(payday, 2);
+    // If displayDate is in the future relative to today
+    if (displayDate > now) {
+      return displayDate;
+    }
+  }
+  return null;
 };
 
 export const MyPortfolio: React.FC<MyPortfolioProps> = ({ historyData, latestData, allFunds, theme }) => {
@@ -112,7 +162,7 @@ export const MyPortfolio: React.FC<MyPortfolioProps> = ({ historyData, latestDat
     baseSalary: 15000,
     contributionPercent: 3, // Fixed
     voluntaryPercent: 3,
-    stateContributionPercent: 5, // 3% Matching + 2% Compensation
+    stateContributionPercent: 3, // 3% Matching
     paymentCycle: 'monthly',
     isAutoEnabled: false,
     targetAllocations: { "แผนลงทุนพื้นฐานทั่วไป": 100 },
@@ -264,14 +314,14 @@ export const MyPortfolio: React.FC<MyPortfolioProps> = ({ historyData, latestDat
   // 174: Calculation hooks MUST be called before any conditional returns
   // --- Calculations ---
   const myMonthlyContribution = useMemo(() => {
-    // Only voluntary % now (3-27%)
-    return salarySettings.baseSalary * (salarySettings.voluntaryPercent / 100);
+    // 3% mandatory + voluntary % (0-27%)
+    return salarySettings.baseSalary * ((3 + salarySettings.voluntaryPercent) / 100);
   }, [salarySettings.baseSalary, salarySettings.voluntaryPercent]);
 
   const stateMonthlyContribution = useMemo(() => {
-    // 3% state fixed
-    return salarySettings.baseSalary * (salarySettings.stateContributionPercent / 100);
-  }, [salarySettings.baseSalary, salarySettings.stateContributionPercent]);
+    // 3% state contribution + 2% compensation
+    return salarySettings.baseSalary * (5 / 100);
+  }, [salarySettings.baseSalary]);
 
   const totalMonthlyInvestment = useMemo(() => {
     return myMonthlyContribution + stateMonthlyContribution;
@@ -352,7 +402,7 @@ export const MyPortfolio: React.FC<MyPortfolioProps> = ({ historyData, latestDat
             updatedAt: new Date().toISOString()
           }, { merge: true });
         } catch (e) {
-          console.error("Save failed:", e);
+          // silent fail
         }
       } else {
         localStorage.setItem('gpf_portfolio_guest', JSON.stringify(items));
@@ -361,7 +411,7 @@ export const MyPortfolio: React.FC<MyPortfolioProps> = ({ historyData, latestDat
       }
     };
 
-    // Debounce saves slightly to avoid hitting firestore too hard
+    // Debounce saves slightly
     const timeout = setTimeout(saveToData, 2000);
     return () => clearTimeout(timeout);
   }, [items, salarySettings, customStrategies, user, loading, portfolioValue]);
@@ -388,7 +438,6 @@ export const MyPortfolio: React.FC<MyPortfolioProps> = ({ historyData, latestDat
 
     const simulationStart = salarySettings.startDate || '2022-09-01';
     
-    // 1. Sim accumulation (unscaled)
     const simulatedUnits: Record<string, number> = {};
     let lastPayrollStr = '';
     const historicalPoints: { date: string, value: number, displayDate: string }[] = [];
@@ -406,8 +455,8 @@ export const MyPortfolio: React.FC<MyPortfolioProps> = ({ historyData, latestDat
       if (payrollDates.includes(currentDayStr) && currentDayStr !== lastPayrollStr) {
         lastPayrollStr = currentDayStr;
         const historicalSalary = estimateHistoricalSalary(salarySettings.baseSalary, day.date);
-        // Member contribution (3% mandatory + voluntary) + State contribution (5%)
-        const totalInvest = historicalSalary * ((salarySettings.voluntaryPercent + 8) / 100);
+        // Total = 3% (Mandatory) + X% (Voluntary) + 3% (State Contribution) + 2% (State Compensation)
+        const totalInvest = historicalSalary * ((3 + salarySettings.voluntaryPercent + 3 + 2) / 100);
         const perPaycheck = (salarySettings.paymentCycle === 'biweekly') ? totalInvest / 2 : totalInvest;
 
         Object.entries(salarySettings.targetAllocations || {}).forEach(([fund, percent]) => {
@@ -431,7 +480,6 @@ export const MyPortfolio: React.FC<MyPortfolioProps> = ({ historyData, latestDat
       });
     }
 
-    // 2. Anchor to Reality: Calculate scaling factor to match current portfolio value
     let scaleRatio = 0;
     if (historicalPoints.length > 0 && portfolioValue > 0) {
         const simLatest = historicalPoints[historicalPoints.length - 1].value;
@@ -440,7 +488,6 @@ export const MyPortfolio: React.FC<MyPortfolioProps> = ({ historyData, latestDat
         }
     }
 
-    // 3. Return filtered and scaled data
     return historicalPoints
       .filter(p => p.date >= cutoffStr)
       .map(p => ({
@@ -471,8 +518,6 @@ export const MyPortfolio: React.FC<MyPortfolioProps> = ({ historyData, latestDat
     const benchmarks: Record<string, any[]> = {};
     const simulationStart = salarySettings.startDate || '2022-09-01';
     
-    // First, we need the SAME scaling ratio used for the main portfolio
-    // This requires simulating the current plan again to find the raw latest value
     const currentSimUnits: Record<string, number> = {};
     let lastTempPayroll = '';
     let simCurrentPlanLatest = 0;
@@ -487,7 +532,8 @@ export const MyPortfolio: React.FC<MyPortfolioProps> = ({ historyData, latestDat
       if (payrollDates.includes(cDayStr) && cDayStr !== lastTempPayroll) {
         lastTempPayroll = cDayStr;
         const histSalary = estimateHistoricalSalary(salarySettings.baseSalary, day.date);
-        const totalInv = histSalary * ((salarySettings.voluntaryPercent + 8) / 100);
+        // Total = 3% (Mandatory) + X% (Voluntary) + 3% (State Contribution) + 2% (State Compensation)
+        const totalInv = histSalary * ((3 + salarySettings.voluntaryPercent + 3 + 2) / 100);
         const pPay = (salarySettings.paymentCycle === 'biweekly') ? totalInv / 2 : totalInv;
         Object.entries(salarySettings.targetAllocations || {}).forEach(([fund, percent]) => {
           const p = percent as number;
@@ -505,7 +551,6 @@ export const MyPortfolio: React.FC<MyPortfolioProps> = ({ historyData, latestDat
 
     const scaleRatio = (portfolioValue > 0 && simCurrentPlanLatest > 0) ? (portfolioValue / simCurrentPlanLatest) : 1;
 
-    // Now simulate each benchmark using the same scaling logic
     activeBenchmarks.forEach(strategyId => {
       const strategy = customStrategies.find(s => s.id === strategyId);
       if (!strategy) return;
@@ -527,7 +572,8 @@ export const MyPortfolio: React.FC<MyPortfolioProps> = ({ historyData, latestDat
            lastBPayrollStr = currentDayStr;
            
            const historicalSalary = estimateHistoricalSalary(salarySettings.baseSalary, day.date);
-           const totalInvest = historicalSalary * ((salarySettings.voluntaryPercent + 8) / 100);
+           // Total = 3% (Mandatory) + X% (Voluntary) + 3% (State Contribution) + 2% (State Compensation)
+           const totalInvest = historicalSalary * ((3 + salarySettings.voluntaryPercent + 3 + 2) / 100);
            const perPay = (salarySettings.paymentCycle === 'biweekly') ? totalInvest / 2 : totalInvest;
            
            Object.entries(strategy.allocations).forEach(([fund, percent]) => {
@@ -553,11 +599,9 @@ export const MyPortfolio: React.FC<MyPortfolioProps> = ({ historyData, latestDat
     return benchmarks;
   }, [historyData, portfolioTimeFilter, salarySettings, activeBenchmarks, customStrategies, portfolioValue]);
 
-
   const combinedChartData = useMemo(() => {
     if (portfolioHistory.length === 0) return [];
     
-    // Create a map of dates for faster lookup
     const benchmarkMap: Record<string, Record<string, number>> = {};
     activeBenchmarks.forEach(benchId => {
       const benchData = benchmarkHistory[benchId] || [];
@@ -572,9 +616,6 @@ export const MyPortfolio: React.FC<MyPortfolioProps> = ({ historyData, latestDat
       activeBenchmarks.forEach(benchId => {
         if (benchmarkMap[benchId] && benchmarkMap[benchId][d.date] !== undefined) {
           entry[benchId] = benchmarkMap[benchId][d.date];
-        } else {
-          // If benchmark doesn't have data for this date, maybe fallback or leave undefined
-          // Recharts handles missing values as gaps.
         }
       });
       return entry;
@@ -583,11 +624,8 @@ export const MyPortfolio: React.FC<MyPortfolioProps> = ({ historyData, latestDat
 
   const simulationStats = useMemo(() => {
     if (portfolioHistory.length < 2) return { change: 0, changePercent: 0, isUp: true };
-    
-    // Find the first non-zero value to use as baseline
     const firstNonZero = portfolioHistory.find(d => d.value > 0);
     if (!firstNonZero) return { change: 0, changePercent: 0, isUp: true };
-    
     const first = firstNonZero.value;
     const last = portfolioHistory[portfolioHistory.length - 1].value;
     const change = last - first;
@@ -605,64 +643,9 @@ export const MyPortfolio: React.FC<MyPortfolioProps> = ({ historyData, latestDat
 
   const COLORS = ['#10B981', '#3B82F6', '#8B5CF6', '#F59E0B', '#EF4444', '#06B6D4', '#EC4899'];
 
-  // --- Effects ---
-  // Consolidating all save logic into the existing master effect at line 75
-  // Removing redundant effects at 223 and 227 later
-
-  // --- Daily Accrual Auto-DCA Logic ---
-  useEffect(() => {
-    if (!salarySettings.isAutoEnabled || !latestData) return;
-
-    const runAutoDCA = () => {
-      const now = new Date();
-      // Ensure we are using Bangkok time (GMT+7)
-      const options: Intl.DateTimeFormatOptions = { timeZone: "Asia/Bangkok", hour12: false, hour: 'numeric', minute: 'numeric', year: 'numeric', month: 'numeric', day: 'numeric' };
-      const formatter = new Intl.DateTimeFormat('en-US', options);
-      const parts = formatter.formatToParts(now);
-      const getPart = (type: string) => parts.find(p => p.type === type)?.value;
-      
-      const bkkDay = getPart('day');
-      const bkkMonth = getPart('month');
-      const bkkYear = getPart('year');
-      const bkkHour = parseInt(getPart('hour') || '0');
-      
-      const bkkDateStr = `${bkkYear}-${bkkMonth}-${bkkDay}`;
-      const payrollDates = getPayrollDates(parseInt(bkkYear || '2024'), parseInt(bkkMonth || '1') - 1, salarySettings.paymentCycle);
-      
-      const lastRun = localStorage.getItem('gpf_last_auto_dca_run');
-
-      // Only run if it's a payroll date, and it's 12:00 or later in Bangkok, and hasn't run today
-      if (payrollDates.includes(bkkDateStr) && lastRun !== bkkDateStr && bkkHour >= 12) {
-        setItems(prev => {
-          let newItems = [...prev];
-          const investAmount = salarySettings.paymentCycle === 'biweekly' ? totalMonthlyInvestment / 2 : totalMonthlyInvestment;
-
-          Object.entries(salarySettings.targetAllocations || {}).forEach(([fund, percent]) => {
-            const p = percent as number;
-            if (p > 0) {
-              const moneyForFund = investAmount * (p / 100);
-              const nav = latestData[fund] as number;
-              if (nav && nav > 0) {
-                const unitsToAdd = moneyForFund / nav;
-                const idx = newItems.findIndex(i => i.fund === fund);
-                if (idx >= 0) {
-                  newItems[idx] = { ...newItems[idx], units: newItems[idx].units + unitsToAdd };
-                } else {
-                  newItems.push({ fund, units: unitsToAdd });
-                }
-              }
-            }
-          });
-          return newItems;
-        });
-        localStorage.setItem('gpf_last_auto_dca_run', bkkDateStr);
-      }
-    };
-
-    runAutoDCA();
-    const interval = setInterval(runAutoDCA, 60000);
-    return () => clearInterval(interval);
-  }, [salarySettings.isAutoEnabled, latestData, totalMonthlyInvestment, salarySettings.targetAllocations, salarySettings.paymentCycle]);
+  const nextUpdate = useMemo(() => {
+    return getNextDisplayDate(salarySettings.paymentCycle);
+  }, [salarySettings.paymentCycle]);
 
   // Now the early returns handle rendering only
   if (!user && !loading) {
@@ -793,6 +776,24 @@ export const MyPortfolio: React.FC<MyPortfolioProps> = ({ historyData, latestDat
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          <div className="bg-slate-50 dark:bg-slate-800/50 p-6 rounded-3xl border border-slate-100 dark:border-slate-800 relative group overflow-hidden">
+            <p className="text-xs text-slate-400 font-black uppercase tracking-wider mb-2">อัปเดตอัตโนมัติรอบถัดไป</p>
+            <div className="flex items-center gap-2">
+              <Calendar className="w-5 h-5 text-indigo-500" />
+              <p className="text-2xl font-black text-slate-800 dark:text-white leading-none">
+                {salarySettings.isAutoEnabled ? (
+                  nextUpdate ? `${format(nextUpdate, 'd MMM', { locale: th })} ${nextUpdate.getFullYear() + 543}` : '---'
+                ) : 'ปิดใช้งาน'}
+              </p>
+            </div>
+            {salarySettings.isAutoEnabled && (
+              <p className="text-[10px] text-slate-400 mt-1 font-bold">
+                (+2 วันทำการหลังจากเงินเดือนออก เวลา 12:00)
+              </p>
+            )}
+            <div className="absolute top-0 right-0 w-16 h-16 bg-indigo-500/5 rounded-full -translate-y-1/2 translate-x-1/2" />
+          </div>
+
           <div className="bg-slate-50 dark:bg-slate-800/50 p-6 rounded-3xl border border-slate-100 dark:border-slate-800 relative group">
             <p className="text-xs text-slate-400 font-black uppercase tracking-wider mb-2">เงินเดือนปัจจุบัน</p>
             <div className="flex items-baseline gap-1">
@@ -819,7 +820,7 @@ export const MyPortfolio: React.FC<MyPortfolioProps> = ({ historyData, latestDat
                 </p>
               </div>
               <p className="text-xs font-bold text-emerald-600/60 dark:text-emerald-400/60 uppercase">
-                ออมเพิ่ม {salarySettings.voluntaryPercent}%
+                ออม 3% + ออมเพิ่ม {salarySettings.voluntaryPercent}%
               </p>
             </div>
           </div>
@@ -833,7 +834,7 @@ export const MyPortfolio: React.FC<MyPortfolioProps> = ({ historyData, latestDat
                   {stateMonthlyContribution.toLocaleString()}
                 </p>
               </div>
-              <p className="text-xs font-bold text-blue-600/60 dark:text-blue-400/60 uppercase">รวมสมทบ 5%</p>
+              <p className="text-xs font-bold text-blue-600/60 dark:text-blue-400/60 uppercase">สมทบ 3% + ชดเชย 2%</p>
             </div>
           </div>
 
@@ -1375,7 +1376,7 @@ export const MyPortfolio: React.FC<MyPortfolioProps> = ({ historyData, latestDat
                          const day = d.getDate();
                          const months = ["ม.ค.", "ก.พ.", "มี.ค.", "เม.ย.", "พ.ค.", "มิ.ย.", "ก.ค.", "ส.ค.", "ก.ย.", "ต.ค.", "พ.ย.", "ธ.ค."];
                          const month = months[d.getMonth()];
-                         const year = (d.getFullYear() + 543).toString().slice(-2);
+                         const year = (d.getFullYear() + 543).toString();
                          return `${day} ${month} ${year}`;
                        })() : 'เลือกวันที่'}</span>
                        <Calendar className="w-5 h-5 text-slate-400" />
@@ -1393,14 +1394,14 @@ export const MyPortfolio: React.FC<MyPortfolioProps> = ({ historyData, latestDat
                         onChange={(e) => setTempVoluntary(Number(e.target.value))}
                         className="w-full bg-slate-50 dark:bg-slate-950 p-5 rounded-3xl text-2xl font-black text-indigo-600 border-2 border-transparent focus:border-indigo-500 outline-none appearance-none cursor-pointer"
                       >
-                        {Array.from({length: 25}, (_, i) => i + 3).map(v => <option key={v} value={v}>{v}%</option>)}
+                        {Array.from({length: 28}, (_, i) => i).map(v => <option key={v} value={v}>{v}%</option>)}
                       </select>
                       <div className="absolute right-6 top-1/2 -translate-y-1/2 pointer-events-none text-slate-300">
                         <ChevronRight className="w-6 h-6 rotate-90" />
                       </div>
                     </div>
                     <p className="text-[10px] font-bold text-slate-400 mt-2 ml-1">
-                      เลือกสัดส่วนออมเพิ่มได้ตั้งแต่ 3% ถึง 27% ไม่รวมสมทบรัฐ 3%
+                      เลือกสัดส่วนออมเพิ่มสมัครใจ 0% ถึง 27% (ไม่รวมออมบังคับ 3% และสมทบรัฐ 3%)
                     </p>
                   </div>
                 </div>

@@ -38,6 +38,26 @@ const estimateHistoricalSalary = (baseSalary: number, dateStr: string) => {
 const getPayrollDates = (year: number, month: number, paymentCycle: 'monthly' | 'biweekly') => {
   const dates: string[] = [];
   
+  const getSubBusinessDays = (date: Date, days: number) => {
+    let result = new Date(date);
+    let count = 0;
+    while (count < days) {
+      result.setDate(result.getDate() - 1);
+      if (isBusinessDay(result)) {
+        count++;
+      }
+    }
+    return result;
+  };
+
+  const getLastBusinessDay = (y: number, m: number) => {
+    const lastDay = new Date(y, m + 1, 0);
+    while (!isBusinessDay(lastDay)) {
+      lastDay.setDate(lastDay.getDate() - 1);
+    }
+    return lastDay;
+  };
+
   // Round 1: Mid-month (16th)
   if (paymentCycle === 'biweekly') {
     let d16 = new Date(year, month, 16);
@@ -47,19 +67,10 @@ const getPayrollDates = (year: number, month: number, paymentCycle: 'monthly' | 
     dates.push(`${d16.getFullYear()}-${d16.getMonth() + 1}-${d16.getDate()}`);
   }
 
-  // Round 2: End of month (3 business days before end)
-  const lastDay = new Date(year, month + 1, 0);
-  let count = 0;
-  let dEnd = new Date(lastDay);
-  while (count < 3) {
-    if (isBusinessDay(dEnd)) {
-      count++;
-    }
-    if (count < 3) {
-      dEnd.setDate(dEnd.getDate() - 1);
-    }
-  }
-  dates.push(`${dEnd.getFullYear()}-${dEnd.getMonth() + 1}-${dEnd.getDate()}`);
+  // Round 2: End of month (3rd business day before the last business day)
+  const lbd = getLastBusinessDay(year, month);
+  const paydayRound2 = getSubBusinessDays(lbd, 3);
+  dates.push(`${paydayRound2.getFullYear()}-${paydayRound2.getMonth() + 1}-${paydayRound2.getDate()}`);
   
   return dates;
 };
@@ -240,7 +251,7 @@ export const Leaderboard: React.FC<LeaderboardProps> = ({ historyData = [], late
             baseSalary: 15000,
             contributionPercent: 3,
             voluntaryPercent: 3,
-            stateContributionPercent: 5,
+            stateContributionPercent: 3,
             paymentCycle: 'monthly',
             targetAllocations: { "แผนลงทุนพื้นฐานทั่วไป": 100 },
             startDate: '2022-09-01'
@@ -270,7 +281,8 @@ export const Leaderboard: React.FC<LeaderboardProps> = ({ historyData = [], late
             if (payrollDates.includes(currentDayStr) && currentDayStr !== lastPayrollStr) {
                 lastPayrollStr = currentDayStr;
                 const historicalSalary = estimateHistoricalSalary(salarySettings.baseSalary, day.date);
-                const totalInvest = historicalSalary * ((salarySettings.voluntaryPercent + 8) / 100);
+                // Total = 3% (Mandatory) + X% (Voluntary) + 3% (State Contribution) + 2% (State Compensation)
+                const totalInvest = historicalSalary * ((3 + salarySettings.voluntaryPercent + 3 + 2) / 100);
                 const perPaycheck = (salarySettings.paymentCycle === 'biweekly') ? totalInvest / 2 : totalInvest;
 
                 Object.entries(salarySettings.targetAllocations || {}).forEach(([fund, percent]) => {
@@ -424,7 +436,11 @@ export const Leaderboard: React.FC<LeaderboardProps> = ({ historyData = [], late
                                             {isMe ? comp.displayName : anonymizeName(comp.displayName)}
                                         </h3>
                                         <p className="text-[10px] text-slate-400 font-black uppercase tracking-widest truncate">
-                                            {comp.updatedAt ? new Date(comp.updatedAt).toLocaleDateString('th-TH') : '...'}
+                                            {comp.updatedAt ? new Date(comp.updatedAt).toLocaleDateString('th-TH', { 
+                                                year: 'numeric', 
+                                                month: 'short', 
+                                                day: 'numeric' 
+                                            }) : '...'}
                                         </p>
                                     </div>
 
@@ -501,7 +517,7 @@ export const Leaderboard: React.FC<LeaderboardProps> = ({ historyData = [], late
                                     <div className="bg-slate-50 dark:bg-slate-800/50 p-4 rounded-3xl border border-slate-100 dark:border-slate-800 min-w-0">
                                         <p className="text-[10px] font-black text-slate-400 uppercase mb-1 tracking-widest truncate">เริ่มลงทุน</p>
                                         <p className="text-sm sm:text-lg font-black text-slate-800 dark:text-white">
-                                            {selectedUser.salarySettings?.startDate ? new Date(selectedUser.salarySettings.startDate).toLocaleDateString('th-TH', { year: '2-digit', month: 'short' }) : '---'}
+                                            {selectedUser.salarySettings?.startDate ? new Date(selectedUser.salarySettings.startDate).toLocaleDateString('th-TH', { year: 'numeric', month: 'short' }) : '---'}
                                         </p>
                                     </div>
                                 </div>

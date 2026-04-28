@@ -12,6 +12,10 @@
         "salarySettings": {
           "type": "object",
           "description": "Salary and contribution settings"
+        },
+        "lastAutoDCARunDate": {
+          "type": "string",
+          "description": "The last date the auto DCA was processed"
         }
       }
     },

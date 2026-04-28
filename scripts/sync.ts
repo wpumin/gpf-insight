@@ -1,9 +1,73 @@
 import axios from "axios";
-import { initializeApp } from 'firebase/app';
-import { getFirestore, doc, getDoc, setDoc } from 'firebase/firestore';
+import { initializeApp as initializeClientApp } from 'firebase/app';
+import { getFirestore as getClientFirestore, doc, getDoc, setDoc, query, collection, getDocs, where } from 'firebase/firestore';
+import { initializeApp as initializeAdminApp, getApps as getAdminApps } from 'firebase-admin/app';
+import { getFirestore as getAdminFirestore } from 'firebase-admin/firestore';
 import fs from 'fs';
+import { format, subDays, addDays, isWeekend, isSameDay } from 'date-fns';
 
 import * as cheerio from 'cheerio';
+
+// Helper to determine business days (Mon-Fri)
+const isBusinessDay = (date: Date) => {
+    const day = date.getDay();
+    return day !== 0 && day !== 6;
+};
+
+// Helper to add business days
+const addBusinessDays = (date: Date, days: number) => {
+    let result = new Date(date);
+    let count = 0;
+    while (count < days) {
+        result.setDate(result.getDate() + 1);
+        if (isBusinessDay(result)) {
+            count++;
+        }
+    }
+    return result;
+};
+
+// Helper to find payday dates for a given month
+const getPayrollDates = (year: number, month: number, paymentCycle: 'monthly' | 'biweekly') => {
+    const dates: string[] = [];
+    
+    // Helper for Round 2
+    const getLastBusinessDay = (y: number, m: number) => {
+        const lastDay = new Date(y, m + 1, 0);
+        while (!isBusinessDay(lastDay)) {
+            lastDay.setDate(lastDay.getDate() - 1);
+        }
+        return lastDay;
+    };
+
+    const getSubBusinessDays = (date: Date, days: number) => {
+        let result = new Date(date);
+        let count = 0;
+        while (count < days) {
+            result.setDate(result.getDate() - 1);
+            if (isBusinessDay(result)) {
+                count++;
+            }
+        }
+        return result;
+    };
+
+    // Round 1: Mid-month (16th or previous business day)
+    if (paymentCycle === 'biweekly') {
+        let d16 = new Date(year, month, 16);
+        while (!isBusinessDay(d16)) {
+            d16.setDate(d16.getDate() - 1);
+        }
+        dates.push(format(d16, 'yyyy-MM-dd'));
+    }
+
+    // Round 2: End of month (3 business days before the last business day of the month)
+    const lbd = getLastBusinessDay(year, month);
+    const paydayRound2 = getSubBusinessDays(lbd, 3);
+    dates.push(format(paydayRound2, 'yyyy-MM-dd'));
+    
+    return dates;
+};
 
 async function fetchLatestNAVFromHTML() {
     console.log("[Sync] Scraping GPF HTML for latest NAV...");
@@ -67,8 +131,37 @@ async function fetchLatestNAVFromHTML() {
 const configPath = new URL('../firebase-applet-config.json', import.meta.url);
 const firebaseConfig = JSON.parse(fs.readFileSync(configPath, 'utf8'));
 
-const appFirebase = initializeApp(firebaseConfig);
-const db = getFirestore(appFirebase, firebaseConfig.firestoreDatabaseId);
+// Initialize Client SDK (for existing logic)
+const appFirebase = initializeClientApp(firebaseConfig);
+const db = getClientFirestore(appFirebase, firebaseConfig.firestoreDatabaseId);
+
+// Initialize Admin SDK (for batch updates and bypassing rules)
+try {
+    if (getAdminApps().length === 0) {
+        if (firebaseConfig.projectId) {
+            initializeAdminApp({
+                projectId: firebaseConfig.projectId,
+            });
+        } else {
+            console.warn("[Sync] firebase-admin: No projectId found in config. Admin features will be disabled.");
+        }
+    }
+} catch (err) {
+    console.error("[Sync] Failed to initialize firebase-admin:", err);
+}
+
+const getAdminDbInstance = () => {
+    try {
+        if (getAdminApps().length > 0) {
+            return getAdminFirestore(firebaseConfig.firestoreDatabaseId);
+        }
+    } catch (err) {
+        console.error("[Sync] Failed to get admin firestore instance:", err);
+    }
+    return null;
+};
+
+const adminDb = getAdminDbInstance();
 
 const FUNDS_MAP: Record<string, string> = {
   UNIT_COST1: "แผนลงทุนพื้นฐานทั่วไป",
@@ -259,6 +352,129 @@ export async function syncFNG() {
     } catch (e) {
         console.error("[Sync] FNG update failed:", e);
     }
+}
+
+export async function runAutoDCA() {
+    console.log("[Auto-DCA] Starting automated investment update check...");
+    
+    // Get current time in Bangkok
+    const now = new Date();
+    const bkkTime = new Date(now.toLocaleString("en-US", { timeZone: "Asia/Bangkok" }));
+    const todayStr = format(bkkTime, 'yyyy-MM-dd');
+    
+    console.log(`[Auto-DCA] Reference Date (BKK): ${todayStr} ${format(bkkTime, 'HH:mm')}`);
+
+    // We check if "Today" is exactly 2 business days after a payday
+    // Payday candidates are usually mid-month or end-month
+    // We look back up to 10 days to be safe
+    let checkDate = subDays(bkkTime, 10);
+    let targetPayday: string | null = null;
+
+    while (checkDate <= bkkTime) {
+        // If this checkDate + 2 business days == today, then checkDate was the potential payday
+        const displayDate = addBusinessDays(checkDate, 2);
+        if (format(displayDate, 'yyyy-MM-dd') === todayStr) {
+            targetPayday = format(checkDate, 'yyyy-MM-dd');
+            break;
+        }
+        checkDate = addDays(checkDate, 1);
+    }
+
+    if (!targetPayday) {
+        console.log("[Auto-DCA] Today is not an 'Effective Display Date' (+2 biz days) for any payday. Skipping.");
+        return;
+    }
+
+    console.log(`[Auto-DCA] Identified potential payday: ${targetPayday}. Checking for matching users...`);
+
+    // Fetch NAV for that payday
+    const navSnap = await getDoc(doc(db, 'nav_history', targetPayday));
+    if (!navSnap.exists()) {
+        console.warn(`[Auto-DCA] NAV data for payday ${targetPayday} not found yet. Cannot process updates.`);
+        return;
+    }
+    const navs = navSnap.data();
+
+    // Fetch all users with Auto-DCA enabled
+    if (!adminDb) {
+        console.error("[Auto-DCA] Admin database is not available. Skipping update.");
+        return;
+    }
+    const usersSnap = await adminDb.collection('users').where('salarySettings.isAutoEnabled', '==', true).get();
+    
+    if (usersSnap.empty) {
+        console.log("[Auto-DCA] No users with Auto-DCA enabled found.");
+        return;
+    }
+
+    console.log(`[Auto-DCA] Processing ${usersSnap.size} users...`);
+    let processedCount = 0;
+
+    for (const userDoc of usersSnap.docs) {
+        const userData = userDoc.data();
+        const settings = userData.salarySettings;
+        const portfolio = userData.portfolio || [];
+        
+        // Verify if targetPayday is actually a payday for this user's cycle
+        const paydayDate = new Date(targetPayday);
+        const payrollDates = getPayrollDates(paydayDate.getFullYear(), paydayDate.getMonth(), settings.paymentCycle);
+        
+        if (!payrollDates.includes(targetPayday)) {
+            continue;
+        }
+
+        // Avoid double-processing (check if we already ran for this specific user on this display date)
+        const lastAutoRun = userData.lastAutoDCARunDate;
+        if (lastAutoRun === todayStr) {
+            continue;
+        }
+
+        console.log(`[Auto-DCA] Updating portfolio for user ${userDoc.id}...`);
+
+        // Calculate investment amount
+        const voluntary = settings.voluntaryPercent || 0;
+        // Total = 3% (Member Mandatory) + X% (Voluntary) + 3% (State Contribution) + 2% (State Compensation)
+        const totalPercent = 3 + voluntary + 3 + 2; 
+        const totalInvestPerMonth = settings.baseSalary * (totalPercent / 100);
+        const investThisTime = settings.paymentCycle === 'biweekly' ? totalInvestPerMonth / 2 : totalInvestPerMonth;
+
+        let newPortfolio = [...portfolio];
+        let totalValue = 0;
+
+        Object.entries(settings.targetAllocations || {}).forEach(([fund, percent]) => {
+            const p = percent as number;
+            if (p > 0) {
+                const nav = navs[fund] as number;
+                if (nav && nav > 0) {
+                    const moneyForFund = investThisTime * (p / 100);
+                    const unitsToAdd = moneyForFund / nav;
+                    
+                    const idx = newPortfolio.findIndex(i => i.fund === fund);
+                    if (idx >= 0) {
+                        newPortfolio[idx] = { ...newPortfolio[idx], units: Number((newPortfolio[idx].units + unitsToAdd).toFixed(6)) };
+                    } else {
+                        newPortfolio.push({ fund, units: Number(unitsToAdd.toFixed(6)) });
+                    }
+                }
+            }
+        });
+
+        // Recalculate total balance with latest NAV
+        // Use most recent NAV for latest portfolio valuation
+        const latestNavSnap = await adminDb.collection('metadata').doc('sync_info').get();
+        // Just use the payday NAV for now if latest is not available, or assume user re-calculates on load
+        // Actually it's better to use current NAV from history if possible
+        
+        await userDoc.ref.update({
+            portfolio: newPortfolio,
+            lastAutoDCARunDate: todayStr,
+            updatedAt: new Date().toISOString()
+        });
+
+        processedCount++;
+    }
+
+    console.log(`[Auto-DCA] Successfully updated ${processedCount} user portfolios.`);
 }
 
 export async function runSyncTask() {
