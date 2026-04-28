@@ -198,16 +198,7 @@ export const CustomMixBuilder = ({
                 <p className="text-[10px] text-amber-500/80 font-bold flex items-center justify-center gap-1 mt-1 animate-pulse">
                   <AlertCircle className="w-3 h-3" /> กรุณาปรับให้ครบ 100% เพื่อประมวลผล
                 </p>
-              ) : (
-                <div className="mt-4 animate-in fade-in zoom-in duration-500">
-                  <div className="p-3 bg-emerald-500/10 rounded-2xl border border-emerald-500/20">
-                     <p className="text-[11px] text-emerald-400 font-bold leading-relaxed flex items-start gap-2">
-                       <Zap className="w-3.5 h-3.5 shrink-0 mt-0.5" />
-                       เมื่อสัดส่วนครบ 100% ข้อมูลจำลองนี้จะถูกส่งไปแสดงผลเปรียบเทียบในกราฟราคา NAV ที่หน้าหลักโดยอัตโนมัติ (เป็นเส้นประ "My Mix")
-                     </p>
-                  </div>
-                </div>
-              )}
+              ) : null}
             </div>
           </motion.div>
         )}

@@ -277,8 +277,10 @@ function AppContent() {
     <HashRouter>
       <div className={clsx(
         "min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 transition-colors duration-200",
-        "pt-20 xl:pt-16 pb-20 xl:pb-8"
-      )}>
+        "pt-[var(--mobile-pt)] xl:pt-16 pb-20 xl:pb-8"
+      )}
+      style={{ '--mobile-pt': 'calc(max(env(safe-area-inset-top), 1rem) + 4rem)' } as React.CSSProperties}
+      >
         <MobileHeader theme={theme} setTheme={setTheme} />
         <DesktopHeader 
           theme={theme} setTheme={setTheme} 
@@ -352,7 +354,13 @@ const formatThaiDate = (dateStr: string) => {
 
 const MobileHeader = ({ theme, setTheme }: any) => {
   return (
-    <header className="fixed top-0 left-0 right-0 z-50 bg-white/80 dark:bg-slate-950/80 backdrop-blur-xl border-b border-slate-200 dark:border-slate-800 xl:hidden h-14 flex items-center justify-between px-4">
+    <header 
+      className="fixed top-0 left-0 right-0 z-50 bg-white/80 dark:bg-slate-950/80 backdrop-blur-xl border-b border-slate-200 dark:border-slate-800 xl:hidden px-4 flex items-center justify-between"
+      style={{ 
+        paddingTop: 'calc(max(env(safe-area-inset-top), 1rem) + 0.5rem)',
+        paddingBottom: '0.75rem' 
+      }}
+    >
       <div className="flex items-center gap-2">
          <div className="w-8 h-8 bg-emerald-600 rounded-lg flex items-center justify-center shadow-lg shadow-emerald-500/20">
            <TrendingUp className="w-5 h-5 text-white" />
