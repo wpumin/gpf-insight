@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Trophy, ChevronRight, User as UserIcon, PieChart, Wallet, Calendar, TrendingUp, Search, Info, Share2, Loader2 } from 'lucide-react';
 import clsx from 'clsx';
-import { collection, query, orderBy, onSnapshot, limit, doc, getDoc } from 'firebase/firestore';
+import { collection, query, orderBy, onSnapshot, limit, doc, getDoc, setDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 import { useAuth } from '../contexts/AuthContext';
 // Use default import for canvas-confetti
@@ -64,13 +64,13 @@ const getPayrollDates = (year: number, month: number, paymentCycle: 'monthly' | 
     while (!isBusinessDay(d16)) {
       d16.setDate(d16.getDate() - 1);
     }
-    dates.push(`${d16.getFullYear()}-${d16.getMonth() + 1}-${d16.getDate()}`);
+    dates.push(`${d16.getFullYear()}-${String(d16.getMonth() + 1).padStart(2, '0')}-${String(d16.getDate()).padStart(2, '0')}`);
   }
 
   // Round 2: End of month (3rd business day before the last business day)
   const lbd = getLastBusinessDay(year, month);
   const paydayRound2 = getSubBusinessDays(lbd, 3);
-  dates.push(`${paydayRound2.getFullYear()}-${paydayRound2.getMonth() + 1}-${paydayRound2.getDate()}`);
+  dates.push(`${paydayRound2.getFullYear()}-${String(paydayRound2.getMonth() + 1).padStart(2, '0')}-${String(paydayRound2.getDate()).padStart(2, '0')}`);
   
   return dates;
 };
@@ -118,26 +118,198 @@ export const Leaderboard: React.FC<LeaderboardProps> = ({ historyData = [], late
         return () => unsubscribe();
     }, [user]);
 
+    const dynamicCompetitors = React.useMemo(() => {
+        if (!historyData || historyData.length === 0 || !latestData) return competitors;
+
+        const ascendingHistory = [...historyData].sort((a, b) => a.date.localeCompare(b.date));
+
+        return competitors.map(comp => {
+            const manualItems = comp.portfolio || [];
+            const settings = comp.salarySettings || {};
+            let isAutoEnabled = settings.isAutoEnabled;
+            if (isAutoEnabled === undefined) isAutoEnabled = false;
+
+            let latestTxItems: any[] = [];
+            let txs: any[] = [];
+            
+            if (isAutoEnabled) {
+                const simulationStart = settings.startDate || '2022-09-01';
+                let lastPayrollStr = '';
+                
+                const base = Number(settings.baseSalary) || 15000;
+                const mand = Number(settings.contributionPercent || 3);
+                const vol = Number(settings.voluntaryPercent || 0);
+                const match = Number(settings.stateContributionPercent || 3);
+                const compFixed = 2;
+                const totalPct = mand + vol + match + compFixed;
+                const monthlyTotal = base * (totalPct / 100);
+                const rounds = settings.paymentCycle === 'biweekly' ? 2 : 1;
+                const perRound = monthlyTotal / rounds;
+
+                for (const day of ascendingHistory) {
+                    if (day.date < simulationStart) continue;
+
+                    const date = new Date(day.date);
+                    const year = date.getFullYear();
+                    const month = date.getMonth();
+                    const currentDayStr = day.date;
+                    
+                    const payrollDates = getPayrollDates(year, month, settings.paymentCycle || 'monthly');
+                    
+                    if (payrollDates.includes(currentDayStr) && currentDayStr !== lastPayrollStr) {
+                        lastPayrollStr = currentDayStr;
+                        
+                        const dayItems: any[] = [];
+                        
+                        Object.entries(settings.targetAllocations || {}).forEach(([fund, percent]) => {
+                            const p = percent as number;
+                            if (p > 0) {
+                                const nav = day[fund] || 1;
+                                const amount = perRound * (p / 100);
+                                const units = amount / nav;
+                                dayItems.push({ fund, units });
+                            }
+                        });
+                        
+                        if (dayItems.length > 0) {
+                            txs.push({
+                                id: currentDayStr,
+                                items: dayItems
+                            });
+                        }
+                    }
+                }
+                
+                const reversedTxs = txs.reverse();
+                if (reversedTxs.length > 0) {
+                    latestTxItems = reversedTxs[0].items;
+                }
+            }
+
+            const combined: Record<string, { manual: number, auto: number, total: number }> = {};
+            
+            manualItems.forEach((item: any) => {
+                if (!combined[item.fund]) combined[item.fund] = { manual: 0, auto: 0, total: 0 };
+                combined[item.fund].manual = item.units;
+                combined[item.fund].total += item.units;
+            });
+
+            latestTxItems.forEach(item => {
+                if (!combined[item.fund]) combined[item.fund] = { manual: 0, auto: 0, total: 0 };
+                combined[item.fund].auto += item.units;
+                combined[item.fund].total += item.units;
+            });
+
+            const displayPortfolio = Object.entries(combined).map(([fund, data]) => ({
+                fund,
+                units: data.total,
+                total: data.total,
+                manual: data.manual,
+                auto: data.auto
+            })).filter(i => i.total > 0);
+
+            let calculatedTotalValue = 0;
+            displayPortfolio.forEach(item => {
+                let targetDate = manualItems.find((i: any) => i.fund === item.fund)?.lastUpdated;
+                if (!targetDate && txs.length > 0) {
+                    targetDate = txs[0].id;
+                }
+                
+                let nav = latestData[item.fund] || 0;
+                if (targetDate && ascendingHistory.length > 0) {
+                    const sortedHistoryDesc = [...ascendingHistory].sort((a, b) => b.date.localeCompare(a.date));
+                    const record = sortedHistoryDesc.find(d => d.date <= targetDate);
+                    if (record && record[item.fund]) nav = record[item.fund];
+                }
+                calculatedTotalValue += nav * item.total;
+            });
+
+            return {
+                ...comp,
+                totalValue: calculatedTotalValue > 0 ? calculatedTotalValue : comp.totalValue,
+                portfolio: displayPortfolio
+            };
+        }).sort((a, b) => b.totalValue - a.totalValue);
+    }, [competitors, historyData, latestData]);
+
+    const filteredCompetitors = dynamicCompetitors.filter(c => 
+        c.displayName?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        c.email?.toLowerCase().includes(searchQuery.toLowerCase())
+    );
+
+    const myRank = dynamicCompetitors.findIndex(c => c.id === user?.uid) + 1;
     // Handle Confetti for Top 3
     useEffect(() => {
-        if (!loading && competitors.length > 0 && user && !hasCelebrated.current) {
-            const myRank = competitors.findIndex(c => c.id === user.uid) + 1;
+        if (!loading && dynamicCompetitors.length > 0 && user && !hasCelebrated.current) {
+            const myRank = dynamicCompetitors.findIndex(c => c.id === user.uid) + 1;
             if (myRank > 0 && myRank <= 3) {
                 triggerConfetti();
                 hasCelebrated.current = true;
             }
         }
-    }, [loading, competitors, user]);
+    }, [loading, dynamicCompetitors, user]);
 
     // Handle Confetti when viewing a top 3 user
     useEffect(() => {
-        if (selectedUser && competitors.length > 0) {
-            const rank = competitors.findIndex(c => c.id === selectedUser.id) + 1;
+        if (selectedUser && dynamicCompetitors.length > 0) {
+            const rank = dynamicCompetitors.findIndex(c => c.id === selectedUser.id) + 1;
             if (rank > 0 && rank <= 3) {
                 triggerConfetti();
             }
         }
-    }, [selectedUser, competitors]);
+    }, [selectedUser, dynamicCompetitors]);
+
+    // Leaderboard auto-sync for Admin
+    useEffect(() => {
+        if (!user || user.email !== 'pumin.wo@gmail.com') return;
+        if (loading || dynamicCompetitors.length === 0 || competitors.length === 0) return;
+
+        // Calculate sync cutoff (Today at 12:00 GMT+7 -> 05:00 UTC)
+        const now = new Date();
+        const cutoff = new Date(now);
+        cutoff.setUTCHours(5, 0, 0, 0);
+        
+        // If it's before 5:00 UTC today, the cutoff for "latest update" should be yesterday's 5:00 UTC
+        if (now < cutoff) {
+            cutoff.setUTCDate(cutoff.getUTCDate() - 1);
+        }
+
+        const runSync = async () => {
+            const batchConfig: any[] = [];
+            for (let comp of competitors) {
+                const dComp = dynamicCompetitors.find(c => c.id === comp.id);
+                if (!dComp) continue;
+                
+                const lastSyncDate = comp.syncUpdatedAt ? new Date(comp.syncUpdatedAt) : new Date(0);
+                
+                if (lastSyncDate < cutoff || Math.abs(comp.totalValue - dComp.totalValue) > 5) {
+                    batchConfig.push({
+                        id: comp.id,
+                        totalValue: dComp.totalValue,
+                        calculatedPortfolio: dComp.portfolio,
+                        syncUpdatedAt: new Date().toISOString()
+                    });
+                }
+            }
+
+            if (batchConfig.length > 0) {
+                console.log(`Syncing ${batchConfig.length} users to Firestore...`);
+                for (let b of batchConfig) {
+                    try {
+                        await setDoc(doc(db, 'users', b.id), {
+                            totalValue: b.totalValue,
+                            calculatedPortfolio: b.calculatedPortfolio,
+                            syncUpdatedAt: b.syncUpdatedAt
+                        }, { merge: true });
+                    } catch(e) {
+                        console.error('Failed to sync', b.id, e);
+                    }
+                }
+            }
+        };
+
+        runSync();
+    }, [user, loading, dynamicCompetitors, competitors]);
 
     const triggerConfetti = () => {
         const duration = 2 * 1000;
@@ -212,8 +384,8 @@ export const Leaderboard: React.FC<LeaderboardProps> = ({ historyData = [], late
         if (!userIdParam) return;
 
         const handleUrlParam = async () => {
-            if (competitors.length > 0) {
-                const found = competitors.find(c => c.id === userIdParam);
+            if (dynamicCompetitors.length > 0) {
+                const found = dynamicCompetitors.find(c => c.id === userIdParam);
                 if (found) {
                     setSelectedUser(found);
                     const newHash = hash.split('?')[0];
@@ -225,7 +397,12 @@ export const Leaderboard: React.FC<LeaderboardProps> = ({ historyData = [], late
             try {
                 const userDoc = await getDoc(doc(db, 'users', userIdParam));
                 if (userDoc.exists()) {
-                    setSelectedUser({ id: userDoc.id, ...userDoc.data() });
+                    const data = userDoc.data();
+                    setSelectedUser({ 
+                        id: userDoc.id, 
+                        ...data,
+                        portfolio: data.calculatedPortfolio || data.portfolio
+                    });
                     const newHash = hash.split('?')[0];
                     window.history.replaceState({}, '', window.location.pathname + newHash);
                 }
@@ -237,12 +414,6 @@ export const Leaderboard: React.FC<LeaderboardProps> = ({ historyData = [], late
         handleUrlParam();
     }, [competitors]);
 
-    const filteredCompetitors = competitors.filter(c => 
-        c.displayName?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        c.email?.toLowerCase().includes(searchQuery.toLowerCase())
-    );
-
-    const myRank = competitors.findIndex(c => c.id === user?.uid) + 1;
 
     const selectedUserHistory = React.useMemo(() => {
         if (!selectedUser || historyData.length === 0) return [];
@@ -274,16 +445,22 @@ export const Leaderboard: React.FC<LeaderboardProps> = ({ historyData = [], late
             const date = new Date(day.date);
             const year = date.getFullYear();
             const month = date.getMonth();
-            const currentDayStr = `${year}-${month + 1}-${date.getDate()}`;
+            const currentDayStr = day.date; // Use day.date directly since it is padded
             
             const payrollDates = getPayrollDates(year, month, salarySettings.paymentCycle);
             
             if (payrollDates.includes(currentDayStr) && currentDayStr !== lastPayrollStr) {
                 lastPayrollStr = currentDayStr;
-                const historicalSalary = estimateHistoricalSalary(salarySettings.baseSalary, day.date);
-                // Total = 3% (Mandatory) + X% (Voluntary) + 3% (State Contribution) + 2% (State Compensation)
-                const totalInvest = historicalSalary * ((3 + salarySettings.voluntaryPercent + 3 + 2) / 100);
-                const perPaycheck = (salarySettings.paymentCycle === 'biweekly') ? totalInvest / 2 : totalInvest;
+                
+                const base = Number(salarySettings.baseSalary) || 15000;
+                const mand = Number(salarySettings.contributionPercent || 3);
+                const vol = Number(salarySettings.voluntaryPercent || 0);
+                const match = Number(salarySettings.stateContributionPercent || 3);
+                const compFixed = 2;
+                const totalPct = mand + vol + match + compFixed;
+                const monthlyTotal = base * (totalPct / 100);
+                const rounds = salarySettings.paymentCycle === 'biweekly' ? 2 : 1;
+                const perPaycheck = monthlyTotal / rounds;
 
                 Object.entries(salarySettings.targetAllocations || {}).forEach(([fund, percent]) => {
                     const p = percent as number;
@@ -370,7 +547,7 @@ export const Leaderboard: React.FC<LeaderboardProps> = ({ historyData = [], late
                             </div>
                             <div className="bg-white/10 backdrop-blur-sm px-4 py-2 rounded-2xl border border-white/10">
                                 <p className="text-[10px] font-black uppercase text-amber-200/60 mb-0.5">จากทั้งหมด</p>
-                                <p className="text-lg sm:text-xl font-black">{competitors.length} คน</p>
+                                <p className="text-lg sm:text-xl font-black">{dynamicCompetitors.length} คน</p>
                             </div>
                         </div>
                     )}
@@ -409,7 +586,7 @@ export const Leaderboard: React.FC<LeaderboardProps> = ({ historyData = [], late
                         </div>
                     ) : (
                         filteredCompetitors.map((comp, idx) => {
-                            const rank = competitors.findIndex(c => c.id === comp.id) + 1;
+                            const rank = dynamicCompetitors.findIndex(c => c.id === comp.id) + 1;
                             const isMe = comp.id === user?.uid;
                             
                             return (
@@ -624,7 +801,7 @@ export const Leaderboard: React.FC<LeaderboardProps> = ({ historyData = [], late
                                                                 <span className="text-[11px] font-bold text-slate-700 dark:text-slate-300 truncate">{item.fund}</span>
                                                             </div>
                                                             <span className="text-[11px] font-black text-slate-800 dark:text-white shrink-0 ml-2">
-                                                                {item.units.toLocaleString()} Units
+                                                                {item.units.toLocaleString(undefined, { minimumFractionDigits: 4, maximumFractionDigits: 4 })} Units
                                                             </span>
                                                         </div>
                                                     ))}
@@ -644,15 +821,21 @@ export const Leaderboard: React.FC<LeaderboardProps> = ({ historyData = [], late
                                                 <TrendingUp className="w-4 h-4 text-slate-400" />
                                             </div>
                                             <div className="grid grid-cols-2 gap-2">
-                                                {Object.entries(selectedUser.salarySettings.targetAllocations as Record<string, number>)
-                                                    .filter(([_, val]) => val > 0)
-                                                    .map(([name, val], idx) => (
-                                                        <div key={idx} className="flex flex-col gap-1 p-3 bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-2xl">
-                                                            <span className="text-[9px] font-black uppercase text-slate-400 truncate tracking-wider">{name}</span>
-                                                            <span className="text-xs font-black text-emerald-600 dark:text-emerald-400">{val}%</span>
-                                                        </div>
-                                                    ))
-                                                }
+                                                {(() => {
+                                                    const validAllocs = Object.entries(selectedUser.salarySettings!.targetAllocations as Record<string, number>)
+                                                        .filter(([_, val]) => val > 0);
+                                                    const totalAlloc = validAllocs.reduce((sum, [_, val]) => sum + val, 0);
+
+                                                    return validAllocs.map(([name, val], idx) => {
+                                                        const displayVal = totalAlloc > 0 ? Math.round((val / totalAlloc) * 100) : 0;
+                                                        return (
+                                                            <div key={idx} className="flex flex-col gap-1 p-3 bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-2xl">
+                                                                <span className="text-[9px] font-black uppercase text-slate-400 truncate tracking-wider">{name}</span>
+                                                                <span className="text-xs font-black text-emerald-600 dark:text-emerald-400">{displayVal}%</span>
+                                                            </div>
+                                                        );
+                                                    });
+                                                })()}
                                             </div>
                                         </div>
                                     )}

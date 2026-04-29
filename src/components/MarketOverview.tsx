@@ -32,7 +32,7 @@ export const MarketOverview: React.FC<MarketOverviewProps> = ({
   formattedData, lastSync, COLORS, CustomTooltip
 }) => {
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-4 gap-4 auto-rows-max pb-20">
+    <div className="grid grid-cols-1 lg:grid-cols-4 gap-4 auto-rows-max pb-28">
       {/* 2026 Strategy Simulation - NEW POSITONING */}
       <div className="lg:col-span-4 order-0 mb-2">
          <CustomMixBuilder allFunds={allFunds} onMixChange={setCustomMix} data={formattedData} />

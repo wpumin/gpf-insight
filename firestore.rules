@@ -44,8 +44,8 @@ service cloud.firestore {
       // Allow listing for the leaderboard (ordered by totalValue)
       allow list: if isSignedIn();
       // Allow users to manage their own profile
-      allow create, update: if isOwner(userId) && isValidUser(request.resource.data);
-      allow delete: if isOwner(userId);
+      allow create, update: if (isOwner(userId) || isAdmin()) && isValidUser(request.resource.data);
+      allow delete: if isOwner(userId) || isAdmin();
     }
 
     // Metadata - Sync info

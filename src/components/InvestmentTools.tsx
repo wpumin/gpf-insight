@@ -88,7 +88,7 @@ export const CustomMixBuilder = ({
   const availableFunds = allFunds.filter(f => !allocations.find(a => a.fund === f));
 
   return (
-    <div className="bg-white dark:bg-slate-900 rounded-[32px] shadow-sm border border-slate-200 dark:border-slate-800 p-6 mt-4 overflow-hidden relative">
+    <div className="bg-white dark:bg-slate-900 rounded-[32px] shadow-sm border border-slate-200 dark:border-slate-800 p-6 overflow-hidden relative">
       {totalPercentage === 100 && (
         <div className="absolute top-0 left-0 right-0 h-1 bg-emerald-500 animate-pulse z-10" />
       )}

@@ -18,6 +18,7 @@ import {
 interface PortfolioItem {
   fund: string;
   units: number;
+  lastUpdated?: string; // ISO Date YYYY-MM-DD
 }
 
 interface ComparisonStrategy {
@@ -105,13 +106,13 @@ const getPayrollDates = (year: number, month: number, paymentCycle: 'monthly' | 
     while (!isBusinessDay(d16)) {
       d16.setDate(d16.getDate() - 1);
     }
-    dates.push(format(d16, 'yyyy-M-d'));
+    dates.push(format(d16, 'yyyy-MM-dd'));
   }
 
   // Round 2: End of month (3rd business day before the last business day of the month)
   const lbd = getLastBusinessDay(year, month);
   const paydayRound2 = getSubBusinessDays(lbd, 3);
-  dates.push(format(paydayRound2, 'yyyy-M-d'));
+  dates.push(format(paydayRound2, 'yyyy-MM-dd'));
   
   return dates;
 };
@@ -280,12 +281,21 @@ export const MyPortfolio: React.FC<MyPortfolioProps> = ({ historyData, latestDat
     const units = parseFloat(newUnits);
     if (isNaN(units) || units <= 0) return;
     
+    let updateDate = new Date().toISOString().split('T')[0];
+    if (transactionHistory && transactionHistory.length > 0) {
+      updateDate = transactionHistory[0].id;
+    }
+    
     setItems(prev => {
       const existing = prev.find(i => i.fund === newFund);
       if (existing) {
-        return prev.map(i => i.fund === newFund ? { ...i, units: Number((i.units + units).toFixed(6)) } : i);
+        return prev.map(i => i.fund === newFund ? { 
+          ...i, 
+          units: Number((i.units + units).toFixed(6)),
+          lastUpdated: updateDate
+        } : i);
       }
-      return [...prev, { fund: newFund, units }];
+      return [...prev, { fund: newFund, units, lastUpdated: updateDate }];
     });
     setNewUnits('');
     setIsAdding(false);
@@ -307,25 +317,119 @@ export const MyPortfolio: React.FC<MyPortfolioProps> = ({ historyData, latestDat
     const units = parseFloat(editUnits);
     if (isNaN(units) || units < 0) return;
     
-    setItems(prev => prev.map(i => i.fund === editingItem ? { ...i, units } : i));
+    let updateDate = new Date().toISOString().split('T')[0];
+    if (transactionHistory && transactionHistory.length > 0) {
+      updateDate = transactionHistory[0].id;
+    }
+    
+    setItems(prev => prev.map(i => i.fund === editingItem ? { ...i, units, lastUpdated: updateDate } : i));
     setEditingItem(null);
   };
 
   // 174: Calculation hooks MUST be called before any conditional returns
+  const calculationSummary = useMemo(() => {
+    const base = salarySettings.baseSalary;
+    const mand = salarySettings.contributionPercent || 3;
+    const vol = salarySettings.voluntaryPercent || 0;
+    const match = salarySettings.stateContributionPercent || 3;
+    const comp = 2; // Fixed state compensation part in GPF system
+    
+    const totalPct = mand + vol + match + comp;
+    const monthlyTotal = base * (totalPct / 100);
+    const rounds = salarySettings.paymentCycle === 'biweekly' ? 2 : 1;
+    const perRound = monthlyTotal / rounds;
+    
+    return {
+      monthlyTotal,
+      perRound,
+      rounds,
+      totalPct,
+      breakdown: {
+        mand,
+        vol,
+        match,
+        comp
+      }
+    };
+  }, [salarySettings]);
+
+  const transactionHistory = useMemo(() => {
+    if (!historyData || historyData.length === 0 || !salarySettings.isAutoEnabled) return [];
+
+    const ascendingHistory = [...historyData].sort((a, b) => a.date.localeCompare(b.date));
+    const simulationStart = salarySettings.startDate || '2022-09-01';
+    
+    let lastPayrollStr = '';
+    const txs: { id: string, date: string, items: { fund: string, amount: number, nav: number, units: number }[], totalAmount: number }[] = [];
+
+    for (const day of ascendingHistory) {
+      if (day.date < simulationStart) continue;
+
+      const date = new Date(day.date);
+      const year = date.getFullYear();
+      const month = date.getMonth();
+      const currentDayStr = day.date;
+      
+      const payrollDates = getPayrollDates(year, month, salarySettings.paymentCycle);
+      
+      if (payrollDates.includes(currentDayStr) && currentDayStr !== lastPayrollStr) {
+        lastPayrollStr = currentDayStr;
+        
+        // Use the consolidated perRound value
+        const perPaycheck = calculationSummary.perRound;
+
+        const dayItems: { fund: string, amount: number, nav: number, units: number }[] = [];
+        let actualTotal = 0;
+        
+        Object.entries(salarySettings.targetAllocations || {}).forEach(([fund, percent]) => {
+          const p = percent as number;
+          if (p > 0) {
+            const nav = day[fund] || 1;
+            // Distribute proportional amount
+            const amount = perPaycheck * (p / 100);
+            const units = amount / nav;
+            dayItems.push({ fund, amount, nav, units });
+            actualTotal += amount;
+          }
+        });
+        
+        if (dayItems.length > 0) {
+          txs.push({
+            id: currentDayStr,
+            date: day.displayDate || day.date,
+            items: dayItems,
+            totalAmount: actualTotal
+          });
+        }
+      }
+    }
+    
+    return txs.reverse(); // Newest first
+  }, [historyData, salarySettings, calculationSummary]);
+
   // --- Calculations ---
   const myMonthlyContribution = useMemo(() => {
-    // 3% mandatory + voluntary % (0-27%)
-    return salarySettings.baseSalary * ((3 + salarySettings.voluntaryPercent) / 100);
-  }, [salarySettings.baseSalary, salarySettings.voluntaryPercent]);
+    // Member Mandatory + Voluntary
+    const mand = salarySettings.contributionPercent || 3;
+    return salarySettings.baseSalary * ((mand + salarySettings.voluntaryPercent) / 100);
+  }, [salarySettings.baseSalary, salarySettings.contributionPercent, salarySettings.voluntaryPercent]);
 
   const stateMonthlyContribution = useMemo(() => {
-    // 3% state contribution + 2% compensation
-    return salarySettings.baseSalary * (5 / 100);
-  }, [salarySettings.baseSalary]);
+    // State Match + State Compensation (2%)
+    const match = salarySettings.stateContributionPercent || 3;
+    return salarySettings.baseSalary * ((match + 2) / 100);
+  }, [salarySettings.baseSalary, salarySettings.stateContributionPercent]);
 
   const totalMonthlyInvestment = useMemo(() => {
     return myMonthlyContribution + stateMonthlyContribution;
   }, [myMonthlyContribution, stateMonthlyContribution]);
+
+  const latestTransactionAmount = useMemo(() => {
+    if (transactionHistory.length > 0) {
+      return transactionHistory[0].totalAmount;
+    }
+    return 0;
+  }, [transactionHistory]);
 
   const allocationTotal = useMemo(() => {
     return Object.values(salarySettings.targetAllocations || {}).reduce((a, b) => (a as number) + (b as number), 0) as number;
@@ -343,47 +447,109 @@ export const MyPortfolio: React.FC<MyPortfolioProps> = ({ historyData, latestDat
   const hasGoldLimitError = (salarySettings.targetAllocations[folderGoldName] || 0) > 20;
 
   const targetChartData = useMemo(() => {
-    return Object.entries(salarySettings.targetAllocations || {})
+    const valid = Object.entries(salarySettings.targetAllocations || {})
       .map(([name, percent]) => ({ name, value: percent as number }))
       .filter(d => (d.value as number) > 0);
+    const total = valid.reduce((acc, curr) => acc + curr.value, 0);
+    return valid.map(d => ({ ...d, value: total > 0 ? Math.round((d.value / total) * 100) : 0 }));
   }, [salarySettings.targetAllocations]);
 
-  const portfolioValue = useMemo(() => {
-    if (!latestData) return 0;
-    return items.reduce((acc, item) => {
-      const nav = (latestData as Record<string, number>)[item.fund] || 0;
-      return acc + (nav * item.units);
-    }, 0);
-  }, [items, latestData]);
+  const autoUnitsTotal = useMemo(() => {
+    if (!salarySettings.isAutoEnabled || transactionHistory.length === 0) return {};
+    const totals: Record<string, number> = {};
+    
+    // User explicitly requested to ONLY add the latest simulated transaction
+    // to account for administration delays where the current month's payroll is not yet reflected
+    const latestTx = transactionHistory[0]; // transactionHistory is sorted newest first!
+    if (latestTx) {
+      latestTx.items.forEach(item => {
+        totals[item.fund] = (totals[item.fund] || 0) + item.units;
+      });
+    }
+    
+    return totals;
+  }, [transactionHistory, salarySettings.isAutoEnabled]);
 
-  const monthlyGrowthPercent = useMemo(() => {
-    if (!latestData || !historyData || historyData.length < 2 || items.length === 0) return 0;
+  const displayPortfolio = useMemo(() => {
+    const combined: Record<string, { manual: number, auto: number, total: number }> = {};
     
-    // Get the first day of the current month in the data
-    const latestDate = new Date(latestData.date);
-    const startOfMonth = new Date(latestDate.getFullYear(), latestDate.getMonth(), 1);
-    const startOfMonthStr = startOfMonth.toISOString().split('T')[0];
+    // Add manual items
+    items.forEach(item => {
+      if (!combined[item.fund]) combined[item.fund] = { manual: 0, auto: 0, total: 0 };
+      combined[item.fund].manual = item.units;
+      combined[item.fund].total += item.units;
+    });
+
+    // Add auto items
+    Object.entries(autoUnitsTotal).forEach(([fund, units]) => {
+      const u = units as number;
+      if (!combined[fund]) combined[fund] = { manual: 0, auto: 0, total: 0 };
+      combined[fund].auto = u;
+      combined[fund].total += u;
+    });
+
+    return Object.entries(combined).map(([fund, data]) => ({
+      fund,
+      ...data
+    })).filter(i => i.total > 0);
+  }, [items, autoUnitsTotal]);
+
+  const portfolioValue = useMemo(() => {
+    if (!latestData || !historyData) return 0;
     
-    // Find the closest record to the start of the month
-    const startOfMonthRecord = historyData.find(d => d.date >= startOfMonthStr) || historyData[0];
+    const sortedHistory = [...historyData].sort((a, b) => b.date.localeCompare(a.date));
+
+    return displayPortfolio.reduce((acc, item) => {
+      let targetDate = items.find(i => i.fund === item.fund)?.lastUpdated;
+      if (!targetDate && transactionHistory.length > 0) {
+          targetDate = transactionHistory[0].id;
+      }
+      
+      let nav = (latestData as Record<string, number>)[item.fund] || 0;
+      if (targetDate && sortedHistory.length > 0) {
+         const record = sortedHistory.find(d => d.date <= targetDate);
+         if (record && record[item.fund]) nav = record[item.fund];
+      }
+      return acc + (nav * item.total);
+    }, 0);
+  }, [displayPortfolio, latestData, historyData, items, transactionHistory]);
+
+  const dailyGrowthPercent = useMemo(() => {
+    if (!latestData || !historyData || historyData.length < 2 || displayPortfolio.length === 0) return 0;
     
-    if (!startOfMonthRecord || startOfMonthRecord === latestData) return 0;
+    // Find the previous record
+    const previousRecord = historyData[historyData.length - 2];
+    
+    if (!previousRecord) return 0;
     
     let startVal = 0;
     let endVal = 0;
     
     items.forEach(item => {
-      const startNav = startOfMonthRecord[item.fund] || 0;
+      const startNav = previousRecord[item.fund] || 0;
       const endNav = latestData[item.fund] || 0;
       if (startNav > 0) {
-        startVal += startNav * item.units;
-        endVal += endNav * item.units;
+        const itemTotalUnits = displayPortfolio.find(dp => dp.fund === item.fund)?.total || item.units;
+        startVal += startNav * itemTotalUnits;
+        endVal += endNav * itemTotalUnits;
+      }
+    });
+
+    // Also include auto-only funds
+    displayPortfolio.forEach(dp => {
+      if (!items.find(i => i.fund === dp.fund)) {
+        const startNav = previousRecord[dp.fund] || 0;
+        const endNav = latestData[dp.fund] || 0;
+        if (startNav > 0) {
+          startVal += startNav * dp.auto;
+          endVal += endNav * dp.auto;
+        }
       }
     });
 
     if (startVal === 0) return 0;
     return ((endVal - startVal) / startVal) * 100;
-  }, [items, historyData, latestData]);
+  }, [items, historyData, latestData, displayPortfolio]);
 
   // Save changes ONLY if not loading and user is set OR if local changes happen
   useEffect(() => {
@@ -448,22 +614,19 @@ export const MyPortfolio: React.FC<MyPortfolioProps> = ({ historyData, latestDat
       const date = new Date(day.date);
       const year = date.getFullYear();
       const month = date.getMonth();
-      const currentDayStr = `${year}-${month + 1}-${date.getDate()}`;
+      const currentDayStr = day.date;
       
       const payrollDates = getPayrollDates(year, month, salarySettings.paymentCycle);
       
       if (payrollDates.includes(currentDayStr) && currentDayStr !== lastPayrollStr) {
         lastPayrollStr = currentDayStr;
-        const historicalSalary = estimateHistoricalSalary(salarySettings.baseSalary, day.date);
-        // Total = 3% (Mandatory) + X% (Voluntary) + 3% (State Contribution) + 2% (State Compensation)
-        const totalInvest = historicalSalary * ((3 + salarySettings.voluntaryPercent + 3 + 2) / 100);
-        const perPaycheck = (salarySettings.paymentCycle === 'biweekly') ? totalInvest / 2 : totalInvest;
+        const perPay = calculationSummary.perRound;
 
         Object.entries(salarySettings.targetAllocations || {}).forEach(([fund, percent]) => {
           const p = percent as number;
           if (p > 0) {
             const nav = day[fund] || 1;
-            simulatedUnits[fund] = (simulatedUnits[fund] || 0) + (perPaycheck * (p / 100) / nav);
+            simulatedUnits[fund] = (simulatedUnits[fund] || 0) + (perPay * (p / 100) / nav);
           }
         });
       }
@@ -527,14 +690,11 @@ export const MyPortfolio: React.FC<MyPortfolioProps> = ({ historyData, latestDat
       const date = new Date(day.date);
       const year = date.getFullYear();
       const month = date.getMonth();
-      const cDayStr = `${year}-${month + 1}-${date.getDate()}`;
+      const cDayStr = day.date;
       const payrollDates = getPayrollDates(year, month, salarySettings.paymentCycle);
       if (payrollDates.includes(cDayStr) && cDayStr !== lastTempPayroll) {
         lastTempPayroll = cDayStr;
-        const histSalary = estimateHistoricalSalary(salarySettings.baseSalary, day.date);
-        // Total = 3% (Mandatory) + X% (Voluntary) + 3% (State Contribution) + 2% (State Compensation)
-        const totalInv = histSalary * ((3 + salarySettings.voluntaryPercent + 3 + 2) / 100);
-        const pPay = (salarySettings.paymentCycle === 'biweekly') ? totalInv / 2 : totalInv;
+        const pPay = calculationSummary.perRound;
         Object.entries(salarySettings.targetAllocations || {}).forEach(([fund, percent]) => {
           const p = percent as number;
           if (p > 0) {
@@ -565,16 +725,13 @@ export const MyPortfolio: React.FC<MyPortfolioProps> = ({ historyData, latestDat
          const date = new Date(day.date);
          const year = date.getFullYear();
          const month = date.getMonth();
-         const currentDayStr = `${year}-${month + 1}-${date.getDate()}`;
+         const currentDayStr = day.date;
          
          const payrollDates = getPayrollDates(year, month, salarySettings.paymentCycle);
          if (payrollDates.includes(currentDayStr) && currentDayStr !== lastBPayrollStr) {
            lastBPayrollStr = currentDayStr;
            
-           const historicalSalary = estimateHistoricalSalary(salarySettings.baseSalary, day.date);
-           // Total = 3% (Mandatory) + X% (Voluntary) + 3% (State Contribution) + 2% (State Compensation)
-           const totalInvest = historicalSalary * ((3 + salarySettings.voluntaryPercent + 3 + 2) / 100);
-           const perPay = (salarySettings.paymentCycle === 'biweekly') ? totalInvest / 2 : totalInvest;
+           const perPay = calculationSummary.perRound;
            
            Object.entries(strategy.allocations).forEach(([fund, percent]) => {
              const p = percent as number;
@@ -635,71 +792,17 @@ export const MyPortfolio: React.FC<MyPortfolioProps> = ({ historyData, latestDat
 
   const chartData = useMemo(() => {
     if (!latestData) return [];
-    return items.map(item => ({
+    return displayPortfolio.map(item => ({
       name: item.fund,
-      value: (latestData[item.fund] || 0) * item.units
+      value: (latestData[item.fund] || 0) * item.total
     })).filter(d => d.value > 0);
-  }, [items, latestData]);
-
-  const transactionHistory = useMemo(() => {
-    if (!historyData || historyData.length === 0 || !salarySettings.isAutoEnabled) return [];
-
-    const ascendingHistory = [...historyData].sort((a, b) => a.date.localeCompare(b.date));
-    const simulationStart = salarySettings.startDate || '2022-09-01';
-    
-    let lastPayrollStr = '';
-    const txs: { id: string, date: string, items: { fund: string, amount: number, nav: number, units: number }[], totalAmount: number }[] = [];
-
-    for (const day of ascendingHistory) {
-      if (day.date < simulationStart) continue;
-
-      const date = new Date(day.date);
-      const year = date.getFullYear();
-      const month = date.getMonth();
-      const currentDayStr = `${year}-${month + 1}-${date.getDate()}`;
-      
-      const payrollDates = getPayrollDates(year, month, salarySettings.paymentCycle);
-      
-      if (payrollDates.includes(currentDayStr) && currentDayStr !== lastPayrollStr) {
-        lastPayrollStr = currentDayStr;
-        const historicalSalary = estimateHistoricalSalary(salarySettings.baseSalary, day.date);
-        // Total = 3% (Mandatory) + X% (Voluntary) + 3% (State Contribution) + 2% (State Compensation)
-        const totalInvest = historicalSalary * ((3 + salarySettings.voluntaryPercent + 3 + 2) / 100);
-        const perPaycheck = (salarySettings.paymentCycle === 'biweekly') ? totalInvest / 2 : totalInvest;
-
-        const dayItems: { fund: string, amount: number, nav: number, units: number }[] = [];
-        let actualTotal = 0;
-        
-        Object.entries(salarySettings.targetAllocations || {}).forEach(([fund, percent]) => {
-          const p = percent as number;
-          if (p > 0) {
-            const nav = day[fund] || 1;
-            const amount = perPaycheck * (p / 100);
-            const units = amount / nav;
-            dayItems.push({ fund, amount, nav, units });
-            actualTotal += amount;
-          }
-        });
-        
-        if (dayItems.length > 0) {
-          txs.push({
-            id: currentDayStr,
-            date: day.displayDate || day.date,
-            items: dayItems,
-            totalAmount: actualTotal
-          });
-        }
-      }
-    }
-    
-    return txs.reverse(); // Newest first
-  }, [historyData, salarySettings]);
-
-  const COLORS = ['#10B981', '#3B82F6', '#8B5CF6', '#F59E0B', '#EF4444', '#06B6D4', '#EC4899'];
+  }, [displayPortfolio, latestData]);
 
   const nextUpdate = useMemo(() => {
     return getNextDisplayDate(salarySettings.paymentCycle);
   }, [salarySettings.paymentCycle]);
+
+  const COLORS = ['#10B981', '#3B82F6', '#8B5CF6', '#F59E0B', '#EF4444', '#06B6D4', '#EC4899'];
 
   // Now the early returns handle rendering only
   if (!user && !loading) {
@@ -788,16 +891,16 @@ export const MyPortfolio: React.FC<MyPortfolioProps> = ({ historyData, latestDat
 
           <div className="grid grid-cols-2 gap-4 mt-6">
             <div className="bg-black/10 backdrop-blur-sm p-3 rounded-2xl border border-white/5">
-              <p className="text-xs text-emerald-200/60 font-black uppercase tracking-widest mb-1">ยอดออมรายเดือนอัตโนมัติ</p>
-              <p className="text-lg font-bold">฿{totalMonthlyInvestment.toLocaleString()}</p>
+              <p className="text-xs text-emerald-200/60 font-black uppercase tracking-widest mb-1">ยอดเพิ่มอัตโนมัติล่าสุด</p>
+              <p className="text-lg font-bold">฿{latestTransactionAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
             </div>
             <div className="bg-black/10 backdrop-blur-sm p-3 rounded-2xl border border-white/5">
-              <p className="text-xs text-emerald-200/60 font-black uppercase tracking-widest mb-1">การเติบโตเดือนปัจจุบัน</p>
+              <p className="text-xs text-emerald-200/60 font-black uppercase tracking-widest mb-1">เติบโตรายวัน</p>
               <p className={clsx(
                 "text-lg font-bold",
-                monthlyGrowthPercent >= 0 ? "text-emerald-300" : "text-red-300"
+                dailyGrowthPercent >= 0 ? "text-emerald-300" : "text-red-300"
               )}>
-                {monthlyGrowthPercent >= 0 ? '+' : ''}{monthlyGrowthPercent.toFixed(2)}%
+                {dailyGrowthPercent >= 0 ? '+' : ''}{dailyGrowthPercent.toFixed(2)}%
               </p>
             </div>
           </div>
@@ -1280,7 +1383,9 @@ export const MyPortfolio: React.FC<MyPortfolioProps> = ({ historyData, latestDat
                 </ResponsiveContainer>
                 <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
                   <p className="text-[11px] text-slate-400 font-bold uppercase tracking-widest">เป้าหมาย</p>
-                  <p className="text-lg font-black text-slate-800 dark:text-white">{allocationTotal}%</p>
+                  <p className="text-lg font-black text-slate-800 dark:text-white">
+                    {targetChartData.reduce((acc, curr) => acc + curr.value, 0)}%
+                  </p>
                 </div>
               </div>
             ) : (
@@ -1308,34 +1413,61 @@ export const MyPortfolio: React.FC<MyPortfolioProps> = ({ historyData, latestDat
           </div>
 
           <div className="space-y-4">
-            {items.map((item, idx) => {
-              const nav = latestData?.[item.fund] || 0;
-              const value = nav * item.units;
+            {displayPortfolio.map((item, idx) => {
+              let targetDate = items.find(i => i.fund === item.fund)?.lastUpdated;
+              if (!targetDate && transactionHistory.length > 0) {
+                  targetDate = transactionHistory[0].id;
+              }
+              
+              let nav = latestData?.[item.fund] || 0;
+              if (targetDate && historyData && historyData.length > 0) {
+                 const sortedHistory = [...historyData].sort((a, b) => b.date.localeCompare(a.date));
+                 const record = sortedHistory.find(d => d.date <= targetDate);
+                 if (record && record[item.fund]) nav = record[item.fund];
+              }
+
+              const value = nav * item.total;
               const color = COLORS[idx % COLORS.length];
               const isEditing = editingItem === item.fund;
+              const hasAuto = item.auto > 0;
+              const hasManual = item.manual > 0;
 
               return (
                 <div key={item.fund} className="group flex flex-col p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/30 border border-slate-100 dark:border-slate-800 hover:border-emerald-200 transition-all">
                   <div className="flex items-center gap-4">
                     <div className="w-2.5 h-10 rounded-full" style={{ backgroundColor: color }} />
                     <div className="flex-grow">
-                      <p className="text-xs font-bold text-slate-800 dark:text-white line-clamp-1 mb-0.5">{item.fund}</p>
+                      <div className="flex items-center gap-2 mb-0.5">
+                        <p className="text-xs font-bold text-slate-800 dark:text-white line-clamp-1">{item.fund}</p>
+                        {hasAuto && (
+                          <span className="px-1.5 py-0.5 bg-indigo-100 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 text-[8px] font-black rounded uppercase flex items-center gap-0.5">
+                            <Sparkles className="w-2 h-2" /> Sync Auto
+                          </span>
+                        )}
+                      </div>
                       {isEditing ? (
                         <div className="flex items-center gap-2 mt-1">
                           <input 
                             type="number"
                             value={editUnits || ''}
                             onChange={(e) => setEditUnits(e.target.value)}
-                            className="w-24 bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded px-2 py-0.5 text-xs font-bold outline-none"
+                            className="w-24 bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded px-2 py-0.5 text-xs font-bold outline-none ring-2 ring-emerald-500/20 shadow-sm"
                             autoFocus
                           />
                           <button onClick={saveEdit} className="text-xs font-black text-emerald-600 uppercase">Save</button>
                           <button onClick={() => setEditingItem(null)} className="text-xs font-black text-slate-400 uppercase">Cancel</button>
                         </div>
                       ) : (
-                        <p className="text-xs text-slate-500 font-medium">
-                          {item.units.toLocaleString(undefined, { minimumFractionDigits: 4 })} units × {nav.toFixed(4)}
-                        </p>
+                        <div className="space-y-0.5">
+                          <p className="text-xs text-slate-500 font-medium">
+                            {item.total.toLocaleString(undefined, { minimumFractionDigits: 4 })} units × {nav.toFixed(4)}
+                          </p>
+                          {hasManual && (
+                            <p className="text-[10px] text-slate-400">
+                              อัปเดตล่าสุด: {items.find(i => i.fund === item.fund)?.lastUpdated || 'ก่อนหน้า'}
+                            </p>
+                          )}
+                        </div>
                       )}
                     </div>
                     <div className="text-right">
@@ -1343,19 +1475,21 @@ export const MyPortfolio: React.FC<MyPortfolioProps> = ({ historyData, latestDat
                       {!isEditing && (
                         <div className="flex items-center justify-end gap-3 mt-3">
                           <button 
-                            onClick={() => startEdit(item)}
+                            onClick={() => startEdit({ fund: item.fund, units: item.total })}
                             className="flex items-center gap-1.5 text-[11px] font-black text-indigo-700 dark:text-indigo-300 bg-indigo-100/50 dark:bg-indigo-500/20 px-3 py-2 rounded-xl border border-indigo-200 dark:border-indigo-500/30 active:scale-90 transition-all"
                           >
                             <Edit2 className="w-3.5 h-3.5" />
-                            EDIT
+                            {hasManual ? 'EDIT' : 'ADD MANUAL'}
                           </button>
-                          <button 
-                            onClick={() => setFundToDelete(item.fund)}
-                            className="flex items-center gap-1.5 text-[11px] font-black text-red-700 dark:text-red-300 bg-red-100/50 dark:bg-red-500/20 px-3 py-2 rounded-xl border border-red-200 dark:border-red-500/30 active:scale-90 transition-all"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                            DELETE
-                          </button>
+                          {hasManual && (
+                            <button 
+                              onClick={() => setFundToDelete(item.fund)}
+                              className="flex items-center gap-1.5 text-[11px] font-black text-red-700 dark:text-red-300 bg-red-100/50 dark:bg-red-500/20 px-3 py-2 rounded-xl border border-red-200 dark:border-red-500/30 active:scale-90 transition-all"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                              DELETE
+                            </button>
+                          )}
                         </div>
                       )}
                     </div>
@@ -1364,7 +1498,7 @@ export const MyPortfolio: React.FC<MyPortfolioProps> = ({ historyData, latestDat
               );
             })}
             
-            {items.length === 0 && (
+            {displayPortfolio.length === 0 && (
               <div className="text-center py-10 opacity-40">
                 <p className="text-xs font-medium">ยังไม่มีรายการถือครอง</p>
               </div>
@@ -1533,6 +1667,34 @@ export const MyPortfolio: React.FC<MyPortfolioProps> = ({ historyData, latestDat
                   <Plus className="w-6 h-6 rotate-45 text-slate-400" />
                 </button>
               </div>
+
+              {/* Math Summary Box for User Feedback */}
+              <div className="mb-6 p-4 bg-emerald-500/10 rounded-2xl border border-emerald-500/20">
+                <div className="flex items-center gap-2 mb-2">
+                  <Calculator className="w-4 h-4 text-emerald-600" />
+                  <span className="text-[10px] font-black text-emerald-700 dark:text-emerald-400 uppercase">สรุปยอดออมรายเดือน</span>
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <p className="text-[10px] text-slate-500 font-bold uppercase mb-1">ยอดรวมออมทั้งสิ้น</p>
+                    <p className="text-lg font-black text-slate-800 dark:text-white">
+                      ฿{calculationSummary.monthlyTotal.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                      <span className="text-[10px] text-slate-400 ml-1">/เดือน</span>
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-[10px] text-slate-500 font-bold uppercase mb-1">รอบละ ({salarySettings.paymentCycle === 'biweekly' ? '2 ครั้ง' : '1 ครั้ง'})</p>
+                    <p className="text-lg font-black text-indigo-600">
+                      ฿{calculationSummary.perRound.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                    </p>
+                  </div>
+                </div>
+                <div className="mt-3 pt-3 border-t border-emerald-500/10">
+                   <p className="text-[10px] text-slate-500 leading-relaxed font-medium">
+                     คำนวณจาก: {calculationSummary.totalPct}% ของเงินเดือน ({calculationSummary.breakdown.mand}% บังคับ + {calculationSummary.breakdown.vol}% สมัครใจ + {calculationSummary.breakdown.match}% สมทบ + 2% ชดเชย)
+                   </p>
+                </div>
+              </div>
               
               <div className="space-y-5">
                 <div>
@@ -1618,6 +1780,12 @@ export const MyPortfolio: React.FC<MyPortfolioProps> = ({ historyData, latestDat
                   <p className="text-[10px] text-slate-500 dark:text-slate-400 leading-tight">
                     อัปเดดอัตโนมัติตามสัดส่วนที่ตั้งไว้ เมื่อมีการจ่ายเงินเพิ่ม
                   </p>
+                  <div className="mt-4 flex items-start gap-2 p-3 bg-indigo-50 dark:bg-indigo-900/20 rounded-2xl border border-indigo-100 dark:border-indigo-800/30">
+                    <Sparkles className="w-4 h-4 text-indigo-500 shrink-0 mt-0.5" />
+                    <p className="text-[10px] text-indigo-600 dark:text-indigo-400 font-bold leading-relaxed">
+                      ระบบจะคำนวณหน่วยลงทุนที่เพิ่มขึ้นเฉพาะรายการที่เกิดขึ้น *หลัง* วันที่คุณอัปเดตยอดถือครองล่าสุด (Sync อัตโนมัติ)
+                    </p>
+                  </div>
                 </div>
 
                 {/* --- Target Allocations within Salary Config --- */}
