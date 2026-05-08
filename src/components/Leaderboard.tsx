@@ -1,7 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Trophy, ChevronRight, User as UserIcon, PieChart, Wallet, Calendar, TrendingUp, Search, Info, Share2, Loader2 } from 'lucide-react';
+import { Trophy, ChevronRight, User as UserIcon, PieChart, Wallet, Calendar, TrendingUp, Search, Info, Share2, Loader2, Clock } from 'lucide-react';
 import clsx from 'clsx';
+import { formatDistanceToNow } from 'date-fns';
+import { th } from 'date-fns/locale';
 import { collection, query, orderBy, onSnapshot, limit, doc, getDoc, setDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 import { useAuth } from '../contexts/AuthContext';
@@ -625,9 +627,9 @@ export const Leaderboard: React.FC<LeaderboardProps> = ({ historyData = [], late
                                         <p className="font-black text-slate-800 dark:text-white text-sm sm:text-base">
                                             ฿{comp.totalValue?.toLocaleString(undefined, { maximumFractionDigits: 0 })}
                                         </p>
-                                        <div className="flex items-center justify-end gap-1 text-[10px] font-bold text-emerald-500">
-                                            <TrendingUp className="w-2.5 h-2.5" />
-                                            Active
+                                        <div className="flex items-center justify-end gap-1 text-[10px] font-extrabold text-emerald-500">
+                                            <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                                            {comp.updatedAt ? formatDistanceToNow(new Date(comp.updatedAt), { addSuffix: true, locale: th }) : 'Active'}
                                         </div>
                                     </div>
                                     
@@ -686,15 +688,21 @@ export const Leaderboard: React.FC<LeaderboardProps> = ({ historyData = [], late
                                     </button>
                                 </div>
 
-                                <div className="grid grid-cols-2 gap-3 mb-8">
-                                    <div className="bg-slate-50 dark:bg-slate-800/50 p-4 rounded-3xl border border-slate-100 dark:border-slate-800 min-w-0">
-                                        <p className="text-[10px] font-black text-slate-400 uppercase mb-1 tracking-widest truncate">มูลค่าพอร์ต</p>
-                                        <p className="text-sm sm:text-lg font-black text-slate-800 dark:text-white break-all">฿{selectedUser.totalValue?.toLocaleString(undefined, { maximumFractionDigits: 0 })}</p>
+                                <div className="grid grid-cols-3 gap-2 mb-8">
+                                    <div className="bg-slate-50 dark:bg-slate-800/50 p-3 rounded-2xl border border-slate-100 dark:border-slate-800 min-w-0 flex flex-col justify-center">
+                                        <p className="text-[8px] font-black text-slate-400 uppercase mb-0.5 tracking-widest truncate text-center">มูลค่าพอร์ต</p>
+                                        <p className="text-xs sm:text-sm font-black text-slate-800 dark:text-white break-all text-center">฿{selectedUser.totalValue?.toLocaleString(undefined, { maximumFractionDigits: 0 })}</p>
                                     </div>
-                                    <div className="bg-slate-50 dark:bg-slate-800/50 p-4 rounded-3xl border border-slate-100 dark:border-slate-800 min-w-0">
-                                        <p className="text-[10px] font-black text-slate-400 uppercase mb-1 tracking-widest truncate">เริ่มลงทุน</p>
-                                        <p className="text-sm sm:text-lg font-black text-slate-800 dark:text-white">
+                                    <div className="bg-slate-50 dark:bg-slate-800/50 p-3 rounded-2xl border border-slate-100 dark:border-slate-800 min-w-0 flex flex-col justify-center">
+                                        <p className="text-[8px] font-black text-slate-400 uppercase mb-0.5 tracking-widest truncate text-center">เริ่มลงทุน</p>
+                                        <p className="text-xs sm:text-sm font-black text-slate-800 dark:text-white text-center">
                                             {selectedUser.salarySettings?.startDate ? new Date(selectedUser.salarySettings.startDate).toLocaleDateString('th-TH', { year: 'numeric', month: 'short' }) : '---'}
+                                        </p>
+                                    </div>
+                                    <div className="bg-slate-50 dark:bg-slate-800/50 p-3 rounded-2xl border border-slate-100 dark:border-slate-800 min-w-0 flex flex-col justify-center">
+                                        <p className="text-[8px] font-black text-slate-400 uppercase mb-0.5 tracking-widest truncate text-center">Active ล่าสุด</p>
+                                        <p className="text-[10px] font-black text-emerald-600 dark:text-emerald-400 text-center leading-tight">
+                                            {selectedUser.updatedAt ? formatDistanceToNow(new Date(selectedUser.updatedAt), { addSuffix: true, locale: th }) : 'Active'}
                                         </p>
                                     </div>
                                 </div>
