@@ -495,24 +495,13 @@ export const MyPortfolio: React.FC<MyPortfolioProps> = ({ historyData, latestDat
   }, [items, autoUnitsTotal]);
 
   const portfolioValue = useMemo(() => {
-    if (!latestData || !historyData) return 0;
-    
-    const sortedHistory = [...historyData].sort((a, b) => b.date.localeCompare(a.date));
+    if (!latestData) return 0;
 
     return displayPortfolio.reduce((acc, item) => {
-      let targetDate = items.find(i => i.fund === item.fund)?.lastUpdated;
-      if (!targetDate && transactionHistory.length > 0) {
-          targetDate = transactionHistory[0].id;
-      }
-      
-      let nav = (latestData as Record<string, number>)[item.fund] || 0;
-      if (targetDate && sortedHistory.length > 0) {
-         const record = sortedHistory.find(d => d.date <= targetDate);
-         if (record && record[item.fund]) nav = record[item.fund];
-      }
+      const nav = (latestData as Record<string, number>)[item.fund] || 0;
       return acc + (nav * item.total);
     }, 0);
-  }, [displayPortfolio, latestData, historyData, items, transactionHistory]);
+  }, [displayPortfolio, latestData]);
 
   const dailyGrowthPercent = useMemo(() => {
     if (!latestData || !historyData || historyData.length < 2 || displayPortfolio.length === 0) return 0;

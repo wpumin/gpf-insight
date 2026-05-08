@@ -88,6 +88,9 @@ export const Leaderboard: React.FC<LeaderboardProps> = ({ historyData = [], late
     const [searchQuery, setSearchQuery] = useState('');
     const hasCelebrated = useRef(false);
 
+    const ADMIN_EMAILS = ['pumin.wo@gmail.com', 'pumin.wongsiri@gmail.com'];
+    const isAdmin = user && ADMIN_EMAILS.includes(user.email || '');
+
     useEffect(() => {
         if (!user) {
             setLoading(false);
@@ -210,17 +213,7 @@ export const Leaderboard: React.FC<LeaderboardProps> = ({ historyData = [], late
 
             let calculatedTotalValue = 0;
             displayPortfolio.forEach(item => {
-                let targetDate = manualItems.find((i: any) => i.fund === item.fund)?.lastUpdated;
-                if (!targetDate && txs.length > 0) {
-                    targetDate = txs[0].id;
-                }
-                
                 let nav = latestData[item.fund] || 0;
-                if (targetDate && ascendingHistory.length > 0) {
-                    const sortedHistoryDesc = [...ascendingHistory].sort((a, b) => b.date.localeCompare(a.date));
-                    const record = sortedHistoryDesc.find(d => d.date <= targetDate);
-                    if (record && record[item.fund]) nav = record[item.fund];
-                }
                 calculatedTotalValue += nav * item.total;
             });
 
@@ -261,7 +254,7 @@ export const Leaderboard: React.FC<LeaderboardProps> = ({ historyData = [], late
 
     // Leaderboard auto-sync for Admin
     useEffect(() => {
-        if (!user || user.email !== 'pumin.wo@gmail.com') return;
+        if (!user || !isAdmin) return;
         if (loading || dynamicCompetitors.length === 0 || competitors.length === 0) return;
 
         // Calculate sync cutoff (Today at 12:00 GMT+7 -> 05:00 UTC)
@@ -617,7 +610,7 @@ export const Leaderboard: React.FC<LeaderboardProps> = ({ historyData = [], late
 
                                     <div className="flex-1 min-w-0">
                                         <h3 className="font-bold text-slate-800 dark:text-white truncate text-sm sm:text-base">
-                                            {isMe ? comp.displayName : anonymizeName(comp.displayName)}
+                                            {isMe || isAdmin ? comp.displayName : anonymizeName(comp.displayName)}
                                         </h3>
                                         <p className="text-[10px] text-slate-400 font-black uppercase tracking-widest truncate">
                                             {comp.updatedAt ? new Date(comp.updatedAt).toLocaleDateString('th-TH', { 
@@ -676,7 +669,7 @@ export const Leaderboard: React.FC<LeaderboardProps> = ({ historyData = [], late
                                     </div>
                                     <div className="min-w-0 flex-1">
                                         <h3 className="text-lg sm:text-xl font-black text-slate-800 dark:text-white truncate pr-2">
-                                            {selectedUser.id === user?.uid ? selectedUser.displayName : anonymizeName(selectedUser.displayName)}
+                                            {selectedUser.id === user?.uid || isAdmin ? selectedUser.displayName : anonymizeName(selectedUser.displayName)}
                                         </h3>
                                         <p className="text-[12px] sm:text-sm font-bold text-slate-400 uppercase tracking-wider">สมาชิก กบข. Insight</p>
                                     </div>
